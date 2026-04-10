@@ -9,7 +9,32 @@ author: Group 1 (Mari, Oluwatomide)
 ---
 
 ```{r}
+library(tidyverse)
+library(randomForest)
+library(xgboost)
+library(caret)
+library(lubridate)
+library(readr)
+library(dplyr)
+library(tidymodels)
+library(vip)
+library(ranger)
+library(finetune)
 
+```
+
+
+
+```{r}
+training_metadata <- read_csv("../final_project/training/training_meta.csv")
+
+training_soil <- read_csv("../final_project/training/training_soil.csv")
+
+training_trait <- read_csv("../final_project/training/training_trait.csv")
+
+training_metadata
+training_soil
+training_trait
 
 ```
 
@@ -17,5 +42,75 @@ author: Group 1 (Mari, Oluwatomide)
 
 ```{r}
 
+training_soil1 <- training_soil %>%
+
+separate(site,
+                   into = c("site", "year_"))
 
 ```
+
+
+
+
+```{r}
+data_combined <- training_trait %>%
+  left_join(training_soil1, by = c("site", "year")) %>%
+  left_join(training_metadata_summary, by = c("site", "year"))
+write_csv(data_combined,"../final_project/chat/merged_data.csv")
+
+```
+
+```{r}
+
+data_combined %>%
+  count(site, year) %>%
+  filter(n > 1)
+
+```
+
+
+```{r}
+nrow(training_trait)
+nrow(data_combined)
+
+training_metadata %>% count(site, year) %>% filter(n > 1)
+
+training_metadata_summary %>% count(site, year) %>% filter(n > 1)
+
+
+training_soil %>% count(site, year) %>% filter(n > 1)
+
+
+
+training_metadata_summary <- training_metadata %>%
+  group_by(site, year) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE),
+            .groups = "drop")
+```
+
+
+
+```{r}
+trait_counts <- training_trait %>% count(site, year)
+
+merged_counts <- data_combined %>% count(site, year)
+
+
+comparison <- trait_counts %>%
+  left_join(merged_counts, by = c("site", "year"), suffix = c("_before", "_after"))
+
+comparison %>% filter(n_after > n_before)
+```
+
+
+```{r}
+
+trait_counts %>% filter(site == "MOH1", year == 2018)
+
+data_combined %>% filter(site == "MOH1", year == 2018)
+data_combined %>% filter(site == "MOH1", year == 2020)
+
+```
+
+
+
