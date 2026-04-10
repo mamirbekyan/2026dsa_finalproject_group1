@@ -1,0 +1,21 @@
+---
+title: "Data Science Applied to Ag - Final Project - ML"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    theme: cerulean
+author: Group 1 (Mari, Oluwatomide)
+---
+
+```{r}
+
+
+```
+
+
+
+```{r}
+
+
+```
