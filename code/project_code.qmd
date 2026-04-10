@@ -26,11 +26,11 @@ library(finetune)
 
 
 ```{r}
-training_metadata <- read_csv("../final_project/training/training_meta.csv")
+training_metadata <- read_csv("../data/training/training_meta.csv")
 
-training_soil <- read_csv("../final_project/training/training_soil.csv")
+training_soil <- read_csv("../data/training/training_soil.csv")
 
-training_trait <- read_csv("../final_project/training/training_trait.csv")
+training_trait <- read_csv("../data/training/training_trait.csv")
 
 training_metadata
 training_soil
