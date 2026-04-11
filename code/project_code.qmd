@@ -20,11 +20,8 @@ library(tidymodels)
 library(vip)
 library(ranger)
 library(finetune)
-```{r}
-
 ```
 
-```
 
 
 #Viewing Files
@@ -110,7 +107,8 @@ setdiff(training_merged$site, testing_submission$site)  # sites in df2 but not d
 #Drop sites from training_merged that to not need to be predicted to complete testing_submission. ONH1 and 2 are in proximity to one another, however to not appear in the testing_submission dataframe. ONH3 (a new site) appears in testing_submission. Potential to predict ONH3 based on ONH1 and ONH2, so will not remove them.
 
 training_merged1 <- training_merged %>%
-  filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1" )))
+  filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1" ))) %>%
+  mutate(id = row_number(), .before = "year") #adding an ID column at the front of the table to identify rows
 
 write_csv(training_merged1,"../data/training_merged1.csv")
 
@@ -124,19 +122,39 @@ setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not 
 #loading Soil DB for Nitrogen ppm
 ```{r}
 #install.packages("soilDB")
-library(soilDB)
+#install.packages("aqp")
+library("soilDB")
+library("aqp")
 
 # Example: get soil data by coordinates
-ssurgo_data <- SDA_spatialQuery(
-  coords = cbind(lon, lat),
-  what = "mukey")
+added_nitrogen_values <- fetchSoilGrids(
+  training_merged1,
+  loc.names = c("id","latitude","longitude"),
+  variables = "nitrogen",
+  depth_intervals = "0-5"
+)
   
-s
+#I STOPPED RUNNING BECAUSE IT TOOK A VERY LONG TIME
 ```
 
 
-
+#potential open-source data to add
 ```{r}
-#new
+#Weather Data like Growing Degree Days (GDD) from NOAA/PRISM(US)
+#can add column like rainfall_30days_post_planting and GDD_silking_period
+
+#STEPS FOR GDD from NOAA/PRISM(US)
+#First extract Tmax and Tmin (daily max and min values from specific long and lats)
+#Then, calculate GDD from daily temperatures by latitude and longitude 
+#GDD = ((Tmax + Tmin)/2) - (Tbase)
+
+#Base Temperature for GDD for Corn is 10C  https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html 
+
+#ALSO LOOK INTO NASA POWER for this data
+
+
+
+#Soil Characteristics from SoilGrids by Lat/Long
+#can add column like CEC (cation exchange capacity) or soil_texture (i.e. sand/silt/clay%) or bulk_density or water_holding_capacity
 ```
 
