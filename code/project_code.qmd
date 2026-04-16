@@ -116,6 +116,7 @@ write_csv(training_merged1,"../data/training_merged1.csv")
 setdiff(testing_submission$site, training_merged1$site)  # sites in df1 but not df2
 setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not df1
 
+view(training_merged1)
 ```
 
 
