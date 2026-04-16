@@ -42,7 +42,7 @@ view(testing_submission)
 ```
 
 
-#Removing Duplicates
+#Removing Duplicates and determining day of the year
 ```{r}
 
 training_soil1 <- training_soil %>%
@@ -61,14 +61,19 @@ training_metadata1<- training_metadata %>%
 training_trait1 <- training_trait %>%
   separate(site, 
                   into = c("site", "x")) %>%
-  select(!(x)) #remove x column with the -Dry, -Early, -Late
+  select(!(x)) %>% #remove x column with the -Dry, -Early, -Late
+  mutate(
+    across(c(date_planted, date_harvested),
+           ~as.Date(.x, format = "%m/%d/%y")),
+    
+    day_of_year_planted = yday(date_planted),
+    day_of_year_harvested = yday(date_harvested), .before = date_harvested
+  )
 
 view(training_soil1)
 view(training_metadata1)
 view(training_trait1)
 ```
-
-
 
 #Creating Merged Dataset
 ```{r}
@@ -77,8 +82,6 @@ training_merged <- training_trait1 %>%
   left_join(training_metadata1, by = c("site", "year"))
 
 view(training_merged)
-
-
 ```
 #Mapping Sites
 
@@ -99,6 +102,31 @@ ggplot() +
 
 #Making a map to identify the site distributions. PR, AK, HI were removed since they did not have sites. Points exist in the Mediterranean between Corsica and Italy, i.e. Site NEH2 (which exists in the final testing_submission file).
 ```
+#Removing sites outside US boundaries
+```{r}
+training_merged_US <- training_merged %>%
+  filter(
+    latitude >= 24.5 & latitude <= 49.5,
+    longitude >= -125 & longitude <= -66.5
+  )
+training_merged_US
+```
+
+#Replotting to confirm
+```{r}
+site_locations <- us_states() %>%
+filter(!(state_abbr %in% c("PR", "AK", "HI")))
+ggplot() +
+  geom_sf(data = site_locations) +
+  geom_point(data = training_merged_US, 
+             aes(x = longitude,
+                 y = latitude,
+                color = yield_mg_ha)
+  )
+
+```
+
+
 #Making Sites Only Identical
 ```{r}
 setdiff(testing_submission$site, training_merged$site)  # sites in df1 but not df2
@@ -108,11 +136,11 @@ setdiff(training_merged$site, testing_submission$site)  # sites in df2 but not d
 ```{r}
 #Drop sites from training_merged that to not need to be predicted to complete testing_submission. ONH1 and 2 are in proximity to one another, however to not appear in the testing_submission dataframe. ONH3 (a new site) appears in testing_submission. Potential to predict ONH3 based on ONH1 and ONH2, so will not remove them.
 
-training_merged1 <- training_merged %>%
+training_merged_US_1 <- training_merged_US %>%
   filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1" ))) %>%
   mutate(id = row_number(), .before = "year") #adding an ID column at the front of the table to identify rows
 
-write_csv(training_merged1,"../data/training_merged1.csv")
+write_csv(training_merged_US_1,"../data/training_merged_US_1.csv")
 
 #confirm: 
 setdiff(testing_submission$site, training_merged1$site)  # sites in df1 but not df2
