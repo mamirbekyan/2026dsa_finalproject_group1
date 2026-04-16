@@ -4,4 +4,54 @@ format: html
 editor: visual
 ---
 
-You can add options to executable code like thisThe `echo: false` option disables the printing of code (only output is displayed).
+```{r}
+#remotes::install_github("ropensci/USAboundaries")
+#remotes::install_github("ropensci/USAboundariesData")
+
+library(tidyverse)
+library(USAboundaries) # for US state boundaries
+library(sf) # for US map
+library(daymetr)
+```
+```{r}
+training_merged1 <- read_csv("../data/training_merged1.csv")
+
+training_merged1
+
+daymet_one <- download_daymet(site = training_merged1$site[1],
+                              lat = training_merged1$latitude[1],
+                              lon = training_merged1$longitude[1],
+                              start = training_merged1$year[1],
+                              end = training_merged1$year[1],
+                              simplify = T
+                              )
+
+daymet_one
+```
+```{r}
+daymet_all <- training_merged1 %>%
+  mutate(weather = pmap(list(.y = year,
+                             .site = site,
+                             .lat = latitude,
+                             .lon = longitude),
+                        function(.y, .site, .lat, .lon)
+                          download_daymet(
+                                          site = .site,
+                                          lat = .lat,
+                                          lon = .lon,
+                                          start = .y,
+                                          end = .y,
+                                          simplify = T,
+                                          silent = T) %>%
+                          rename(.year = year,
+                                 .site = site)
+                          
+                        ))
+
+daymet_all
+```
+
+```{r}
+
+```
+

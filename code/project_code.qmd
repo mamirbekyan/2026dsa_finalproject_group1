@@ -84,7 +84,9 @@ view(training_merged)
 
 ```{r}
 library(USAboundaries)
-
+library(ggplot2)
+library(dplyr)
+library(sf)
 site_locations <- us_states() %>%
 filter(!(state_abbr %in% c("PR", "AK", "HI")))
 ggplot() +
