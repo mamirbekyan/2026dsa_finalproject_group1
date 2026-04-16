@@ -56,29 +56,6 @@ daymet_all
 ```
 
 
-```{r}
-daymet_all <- training_metadata1 %>%
-  mutate(weather = pmap(list(.y = year,
-                             .site = site,
-                             .lat = latitude,
-                             .lon = longitude),
-                        function(.y, .site, .lat, .lon)
-                          download_daymet(
-                                          site = .site,
-                                          lat = .lat,
-                                          lon = .lon,
-                                          start = .y,
-                                          end = .y,
-                                          simplify = T,
-                                          silent = T) %>%
-                          rename(.year = year,
-                                 .site = site)
-                          
-                        )) 
-daymet_all
-```
-
-
 Inspecting weather data for the first site-year. 
 ```{r}
 daymet_all$weather[1]
@@ -106,7 +83,8 @@ daymet_all_unnest1 <- daymet_all %>%
     names_from = measurement,
     values_from = value
   ) %>%
-  janitor::clean_names()
+  janitor::clean_names() %>%
+  mutate(gdd = ((tmax_deg_c - tmin_deg_c)/2) - 10)
 
 
 daymet_all_unnest1
