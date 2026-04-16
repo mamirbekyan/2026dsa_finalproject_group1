@@ -149,7 +149,7 @@ setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not 
 view(training_merged1)
 ```
 
-
+#i think we can remove this
 #loading Soil DB for Nitrogen ppm
 ```{r}
 #install.packages("soilDB")
