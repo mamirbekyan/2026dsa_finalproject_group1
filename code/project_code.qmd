@@ -132,6 +132,7 @@ setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not 
 
 view(training_merged1)
 ```
+
 ```{r, warning = False, message = False}
 fieldweather <- read_csv("../data/fieldweatherdata.csv")
 

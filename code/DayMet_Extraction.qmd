@@ -99,12 +99,17 @@ daymet_all_unnest1 <- daymet_all %>%
     values_from = value
   ) %>%
   janitor::clean_names() %>%
-  mutate(gdd = ((tmax_deg_c - tmin_deg_c)/2) - 10)
+  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30)) %>% #round any value above 30 to 30
+  mutate(gdd = ((tmax_deg_c_rounded_down - tmin_deg_c)/2) - 10) %>% #calculate growing degree days for corn
+  round(gdd, 2) #round decimals to only 2 places
+  
 
 
 daymet_all_unnest1
 ```
-
+###Notes:
+Must round any Tmax value down to 30C if it exceeds 30
+Must reduce GDD to just 2 decimal points
 
 Exporting file for future use.  
 ```{r}
