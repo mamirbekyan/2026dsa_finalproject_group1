@@ -4,6 +4,7 @@ format: html
 editor: source
 ---
 
+#loading libraries
 ```{r}
 #remotes::install_github("ropensci/USAboundaries")
 #remotes::install_github("ropensci/USAboundariesData")
@@ -12,24 +13,41 @@ library(tidyverse)
 library(USAboundaries) # for US state boundaries
 library(sf) # for US map
 library(daymetr)
+library(purrr)
 ```
 
+<<<<<<< HEAD
 ```{r}
 training_metadata1 <- read_csv("../data/training_metadata1.csv")
 
 training_metadata1
 
+=======
+
+#Downloading weather data
+```{r}
+training_metadata1
+>>>>>>> e29ffd977e1c870a98f3df0565f91f82793a362a
 daymet_one <- download_daymet(site = training_metadata1$site[1],
                               lat = training_metadata1$latitude[1],
                               lon = training_metadata1$longitude[1],
                               start = training_metadata1$year[1],
                               end = training_metadata1$year[1],
+<<<<<<< HEAD
                               simplify = T
+=======
+                              simplify = T,
+                              silent = T
+>>>>>>> e29ffd977e1c870a98f3df0565f91f82793a362a
                               )
-
 daymet_one
 ```
 
+<<<<<<< HEAD
+=======
+
+#Downloading weather data
+>>>>>>> e29ffd977e1c870a98f3df0565f91f82793a362a
 ```{r}
 daymet_all <- training_metadata1 %>%
   mutate(weather = pmap(list(.y = year,
@@ -49,9 +67,51 @@ daymet_all <- training_metadata1 %>%
                                  .site = site)
                           
                         ))
-
 daymet_all
 ```
+
+
+Inspecting weather data for the first site-year. 
+```{r}
+daymet_all$weather[1]
+
+```
+
+
+Unnesting the weather column.  
+```{r}
+daymet_all_unnest <- daymet_all %>% unnest(weather, names_repair = "unique") %>% #prevents duplication of column names
+  pivot_wider(names_from = measurement,
+              values_from = value) %>%
+  janitor::clean_names()
+
+
+daymet_all_unnest
+```
+
+Alternatively, we can drop longitude and latitude instead of using unique
+```{r}
+daymet_all_unnest1 <- daymet_all %>%
+  mutate(weather = map(weather, ~ select(.x, -latitude, -longitude))) %>%
+  unnest(weather) %>%
+  pivot_wider(
+    names_from = measurement,
+    values_from = value
+  ) %>%
+  janitor::clean_names() %>%
+  mutate(gdd = ((tmax_deg_c - tmin_deg_c)/2) - 10)
+
+
+daymet_all_unnest1
+```
+
+
+Exporting file for future use.  
+```{r}
+write_csv(daymet_all_unnest1,
+          "../data/fieldweatherdata.csv")
+```
+
 
 ```{r}
 

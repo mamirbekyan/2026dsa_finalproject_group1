@@ -20,12 +20,13 @@ library(tidymodels)
 library(vip)
 library(ranger)
 library(finetune)
+library(ggridges)
 ```
 
 
 
 #Viewing Files
-```{r}
+```{r, warning = False, message = False}
 training_metadata <- read_csv("../data/training/training_meta.csv")
 
 training_soil <- read_csv("../data/training/training_soil.csv")
@@ -42,47 +43,56 @@ view(testing_submission)
 ```
 
 
-#Removing Duplicates
-```{r}
+#Removing Duplicates and determining day of the year
+```{r, warning = False, message = False}
 
 training_soil1 <- training_soil %>%
   select(!(year)) %>%
   separate(site,
                    into = c("site", "year")) %>%
   mutate(year = as.numeric(year)) %>%
-  filter(nchar(as.character(year)) == 4)
+  filter(nchar(as.character(year)) == 4) 
 
 training_metadata1<- training_metadata %>%
   separate(site, 
                   into = c("site", "x")) %>%
   select(!(x)) %>% #remove x column
-  unique()
+  unique() %>%
+  filter(
+    latitude >= 24.5 & latitude <= 49.5,
+    longitude >= -125 & longitude <= -66.5
+  ) ##Removing sites outside US boundaries
+
+write_csv(training_metadata1, "../data/training_metadata1.csv")
 
 training_trait1 <- training_trait %>%
   separate(site, 
                   into = c("site", "x")) %>%
-  select(!(x)) #remove x column with the -Dry, -Early, -Late
+  select(!(x)) %>% #remove x column with the -Dry, -Early, -Late
+  mutate(
+    across(c(date_planted, date_harvested),
+           ~as.Date(.x, format = "%m/%d/%y")),
+    
+    day_of_year_planted = yday(date_planted),
+    day_of_year_harvested = yday(date_harvested), .before = date_harvested
+  )
 
 view(training_soil1)
 view(training_metadata1)
 view(training_trait1)
 ```
 
-
-
 #Creating Merged Dataset
-```{r}
+```{r, warning = False, message = False}
 training_merged <- training_trait1 %>%
   left_join(training_soil1, by = c("site", "year")) %>%
   left_join(training_metadata1, by = c("site", "year"))
 
 view(training_merged)
-
-
 ```
 #Mapping Sites
 
-```{r}
+```{r, warning = False, message = False}
 library(USAboundaries)
 library(ggplot2)
 library(dplyr)
@@ -99,13 +109,15 @@ ggplot() +
 
 #Making a map to identify the site distributions. PR, AK, HI were removed since they did not have sites. Points exist in the Mediterranean between Corsica and Italy, i.e. Site NEH2 (which exists in the final testing_submission file).
 ```
+
+
 #Making Sites Only Identical
-```{r}
+```{r, warning = False, message = False}
 setdiff(testing_submission$site, training_merged$site)  # sites in df1 but not df2
 setdiff(training_merged$site, testing_submission$site)  # sites in df2 but not df1
 ```
 
-```{r}
+```{r, warning = False, message = False}
 #Drop sites from training_merged that to not need to be predicted to complete testing_submission. ONH1 and 2 are in proximity to one another, however to not appear in the testing_submission dataframe. ONH3 (a new site) appears in testing_submission. Potential to predict ONH3 based on ONH1 and ONH2, so will not remove them.
 
 training_merged1 <- training_merged %>%
@@ -120,8 +132,90 @@ setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not 
 
 view(training_merged1)
 ```
+```{r, warning = False, message = False}
+fieldweather <- read_csv("../data/fieldweatherdata.csv")
+
+summary(fieldweather)
+
+```
 
 
+Density plots to explore the weather data distributions.  
+```{r}
+fieldweather %>% 
+  pivot_longer(cols = dayl_s:gdd) %>%
+  ggplot(aes(x = value)) +
+  geom_density() + 
+  facet_wrap(~name, scales = "free")
+
+```
+
+```{r}
+fieldweather1 <- fieldweather %>%
+  # Selecting needed variables
+  dplyr::select(-year_2, -site_2, -tile, -altitude) %>%
+# Creating a date class variable  
+  mutate(date_chr = paste0(year, "/", yday)) %>% #paste0 helps to merge columns together
+  mutate(date = as.Date(date_chr, "%Y/%j"))
+
+fieldweather1
+```
+
+Merging file with weather variables by growing window (date planted:date harvested)
+```{r}
+weather_merged <- training_merged1 %>%
+  rowwise() %>%
+  mutate(
+    weather_summary = list(
+      fieldweather1 %>%
+        filter(date >= date_planted,
+               date <= date_harvested) %>%
+        summarise(across(
+            .cols = c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
+            .fns = mean,
+            .names = "mean_{.col}"),
+          across(
+            .cols = c(gdd, prcp_mm_day),
+            .fns = sum,
+            .names = "sum_{.col}"
+          ))))%>%
+  unnest(weather_summary) %>%
+  ungroup %>% 
+  select(-id, -replicate, -block)
+
+head(weather_merged)
+
+write_csv(weather_merged, "../output/weather_merged.csv")
+```
+
+
+Plotting all variables by site
+```{r}
+allplots <- weather_merged %>%
+  pivot_longer(mean_dayl_s:sum_prcp_mm_day) %>%
+  group_by(name) %>%
+  nest() %>%
+  mutate(plot = map2(data, name,
+                     ~ggplot(data = .x,
+       aes(x = value,
+           y = site,
+           fill = stat(x))
+       ) +
+  geom_density_ridges_gradient(scale = 3,
+                               rel_min_height = 0.01) +
+  scale_fill_viridis_c(option = "C", alpha = .8) +
+  theme(legend.position = "none") +
+  labs(x= .y,
+       y = "site")))
+  
+allplots  
+```
+
+```{r}
+allplots$plot
+```
+
+#i think we can remove this
 #loading Soil DB for Nitrogen ppm
 ```{r}
 #install.packages("soilDB")
