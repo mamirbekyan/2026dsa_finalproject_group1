@@ -21,33 +21,24 @@ library(purrr)
 training_metadata1 <- read_csv("../data/training_metadata1.csv")
 
 training_metadata1
-
-=======
+```
 
 #Downloading weather data
 ```{r}
 training_metadata1
->>>>>>> e29ffd977e1c870a98f3df0565f91f82793a362a
 daymet_one <- download_daymet(site = training_metadata1$site[1],
                               lat = training_metadata1$latitude[1],
                               lon = training_metadata1$longitude[1],
                               start = training_metadata1$year[1],
                               end = training_metadata1$year[1],
-<<<<<<< HEAD
-                              simplify = T
-=======
                               simplify = T,
                               silent = T
->>>>>>> e29ffd977e1c870a98f3df0565f91f82793a362a
                               )
 daymet_one
 ```
 
-<<<<<<< HEAD
-=======
 
 #Downloading weather data
->>>>>>> e29ffd977e1c870a98f3df0565f91f82793a362a
 ```{r}
 daymet_all <- training_metadata1 %>%
   mutate(weather = pmap(list(.y = year,
@@ -83,7 +74,8 @@ Unnesting the weather column.
 daymet_all_unnest <- daymet_all %>% unnest(weather, names_repair = "unique") %>% #prevents duplication of column names
   pivot_wider(names_from = measurement,
               values_from = value) %>%
-  janitor::clean_names()
+  janitor::clean_names()%>%
+  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30),gdd = round(((tmax_deg_c_rounded_down + tmin_deg_c)/2) - 10, 2)) #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
 
 
 daymet_all_unnest
@@ -99,11 +91,7 @@ daymet_all_unnest1 <- daymet_all %>%
     values_from = value
   ) %>%
   janitor::clean_names() %>%
-  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30)) %>% #round any value above 30 to 30
-  mutate(gdd = ((tmax_deg_c_rounded_down - tmin_deg_c)/2) - 10) %>% #calculate growing degree days for corn
-  round(gdd, 2) #round decimals to only 2 places
-  
-
+  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30),gdd = round(((tmax_deg_c_rounded_down + tmin_deg_c)/2) - 10, 2)) #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
 
 daymet_all_unnest1
 ```
