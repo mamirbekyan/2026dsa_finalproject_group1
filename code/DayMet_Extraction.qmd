@@ -37,8 +37,6 @@ daymet_one <- download_daymet(site = training_metadata1$site[1],
 daymet_one
 ```
 
-
-#Downloading weather data
 ```{r}
 daymet_all <- training_metadata1 %>%
   mutate(weather = pmap(list(.y = year,
@@ -69,19 +67,7 @@ daymet_all$weather[1]
 ```
 
 
-Unnesting the weather column.  
-```{r}
-daymet_all_unnest <- daymet_all %>% unnest(weather, names_repair = "unique") %>% #prevents duplication of column names
-  pivot_wider(names_from = measurement,
-              values_from = value) %>%
-  janitor::clean_names()%>%
-  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30),gdd = round(((tmax_deg_c_rounded_down + tmin_deg_c)/2) - 10, 2)) #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
-
-
-daymet_all_unnest
-```
-
-Alternatively, we can drop longitude and latitude instead of using unique
+#Unnesting the weather column and making Growing Degree Day column 
 ```{r}
 daymet_all_unnest1 <- daymet_all %>%
   mutate(weather = map(weather, ~ select(.x, -latitude, -longitude))) %>%
@@ -91,32 +77,18 @@ daymet_all_unnest1 <- daymet_all %>%
     values_from = value
   ) %>%
   janitor::clean_names() %>%
-  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30),gdd = round(((tmax_deg_c_rounded_down + tmin_deg_c)/2) - 10, 2)) #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
+  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30)) %>%
+  mutate(gdd = round((tmax_deg_c_rounded_down + tmin_deg_c)/2) - 10) %>% #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
+  select(-site_2, -year_2)
 
 daymet_all_unnest1
 ```
-###Notes:
-Must round any Tmax value down to 30C if it exceeds 30
-Must reduce GDD to just 2 decimal points
 
-Exporting file for future use.  
+
+#Exporting file for future use.  
 ```{r}
 write_csv(daymet_all_unnest1,
           "../data/fieldweatherdata.csv")
 ```
 
 
-```{r}
-
-daymet_all$weather[1]  #inspect weather data for the first site year
-
-daymet_all_unnest <- daymet_all %>%  #unnest weather data to get the Tmin and Tmax
-  unnest(weather) %>%
-  pivot_wider(names_from = measurement,
-              values_from = value) %>%
-  janitor::clean_names() %>%
-  
-
-
-daymet_all_unnest
-```
