@@ -7,7 +7,7 @@ format:
     theme: cerulean
 author: Group 1 (Mari, Oluwatomide)
 ---
-#Loading Library
+#1. Loading Library
 ```{r, warning = False, message = False}
 library(tidyverse)
 library(randomForest)
@@ -25,7 +25,7 @@ library(ggridges)
 
 
 
-#Viewing Files
+#2. Viewing Files
 ```{r, warning = False, message = False}
 training_metadata <- read_csv("../data/training/training_meta.csv")
 
@@ -43,7 +43,7 @@ view(testing_submission)
 ```
 
 
-#Removing Duplicates and determining day of the year
+#3. Removing Duplicates and determining day of the year
 ```{r, warning = False, message = False}
 
 training_soil1 <- training_soil %>%
@@ -82,7 +82,7 @@ view(training_metadata1)
 view(training_trait1)
 ```
 
-#Creating Merged Dataset
+#4. Creating Merged Dataset
 ```{r, warning = False, message = False}
 training_merged <- training_trait1 %>%
   left_join(training_soil1, by = c("site", "year")) %>%
@@ -90,8 +90,8 @@ training_merged <- training_trait1 %>%
 
 view(training_merged)
 ```
-#Mapping Sites
 
+#5. Mapping Sites
 ```{r, warning = False, message = False}
 library(USAboundaries)
 library(ggplot2)
@@ -111,13 +111,14 @@ ggplot() +
 ```
 
 
-#Making Sites Only Identical
+#6. Matching Sites Across Files
 ```{r, warning = False, message = False}
+
+#Making Sites Only Identical Across Training and Testing
+
 setdiff(testing_submission$site, training_merged$site)  # sites in df1 but not df2
 setdiff(training_merged$site, testing_submission$site)  # sites in df2 but not df1
-```
 
-```{r, warning = False, message = False}
 #Drop sites from training_merged that to not need to be predicted to complete testing_submission. ONH1 and 2 are in proximity to one another, however to not appear in the testing_submission dataframe. ONH3 (a new site) appears in testing_submission. Potential to predict ONH3 based on ONH1 and ONH2, so will not remove them.
 
 training_merged1 <- training_merged %>%
@@ -136,15 +137,20 @@ view(training_merged1)
 ```{r, warning = False, message = False}
 fieldweather <- read_csv("../data/fieldweatherdata.csv")
 
-summary(fieldweather)
+fieldweatherdata <- fieldweather %>%
+  select(-gdd)
+
+summary(fieldweatherdata)
 
 ```
 
 
-Density plots to explore the weather data distributions.  
+#7. Density plots  
 ```{r}
-fieldweather %>% 
-  pivot_longer(cols = dayl_s:gdd) %>%
+#To explore the weather data distributions
+
+fieldweatherdata %>% 
+  pivot_longer(cols = dayl_s:gdd_rounded) %>%
   ggplot(aes(x = value)) +
   geom_density() + 
   facet_wrap(~name, scales = "free")
@@ -152,14 +158,13 @@ fieldweather %>%
 ```
 
 ```{r}
-fieldweather1 <- fieldweather %>%
+fieldweather1 <- fieldweatherdata %>%
   # Selecting needed variables
-  dplyr::select(-year_2, -site_2, -tile, -altitude) %>%
+  dplyr::select(-tile, -altitude) %>%
 # Creating a date class variable  
   mutate(date_chr = paste0(year, "/", yday)) %>% #paste0 helps to merge columns together
   mutate(date = as.Date(date_chr, "%Y/%j"))
 
-fieldweather1
 ```
 
 Merging file with weather variables by growing window (date planted:date harvested)
@@ -176,7 +181,7 @@ weather_merged <- training_merged1 %>%
             .fns = mean,
             .names = "mean_{.col}"),
           across(
-            .cols = c(gdd, prcp_mm_day),
+            .cols = c(gdd_rounded, prcp_mm_day),
             .fns = sum,
             .names = "sum_{.col}"
           ))))%>%
@@ -187,11 +192,15 @@ weather_merged <- training_merged1 %>%
 head(weather_merged)
 
 write_csv(weather_merged, "../output/weather_merged.csv")
+
+#######SUM GDD ROUNDED IS 10 ORDERS TOO LARGE#######
 ```
 
 
-Plotting all variables by site
+# 8. Data Visualization 
 ```{r}
+#Plotting all variables by site
+
 allplots <- weather_merged %>%
   pivot_longer(mean_dayl_s:sum_prcp_mm_day) %>%
   group_by(name) %>%
@@ -216,43 +225,72 @@ allplots
 allplots$plot
 ```
 
-#i think we can remove this
-#loading Soil DB for Nitrogen ppm
+#9. Pre-Processing Before MLA
 ```{r}
-#install.packages("soilDB")
-#install.packages("aqp")
-library("soilDB")
-library("aqp")
+set.seed(76332)
 
-# Example: get soil data by coordinates
-added_nitrogen_values <- fetchSoilGrids(
-  training_merged1,
-  loc.names = c("id","latitude","longitude"),
-  variables = "nitrogen",
-  depth_intervals = "0-5"
-)
-  
-#I STOPPED RUNNING BECAUSE IT TOOK A VERY LONG TIME
+# Splitting the Data for Training
+merged_split <- initial_split(weather_merged, prop = 0.7, strata = yield_mg_ha)
+merged_train <- training(merged_split) %>%
+  select(-c(date_planted, date_harvested))
+merged_test <- testing(merged_split)
+
+```
+
+10. Distribution of Yield
+```{r}
+ggplot() +
+  geom_density(data = merged_train, 
+               aes(x = yield_mg_ha),
+               color = "red") +
+  geom_density(data = merged_test, 
+               aes(x = yield_mg_ha),
+               color = "blue") 
+```
+
+11. Recipe and Prep for Training Model
+```{r}
+#RECIPE
+merged_recipe <- recipe(yield_mg_ha ~ ., data = merged_train) %>%
+  step_novel(all_nominal_predictors()) %>% #renames "new" hybrids as "new" category so that the model does not return an error
+  step_unknown(all_nominal_predictors()) %>% #handling NAs in categorical columns
+  step_dummy(all_nominal_predictors()) %>%  #make dummy variables on categorical variables like previous crop
+  step_impute_median(all_numeric_predictors())#imputing NA values with median
+
+#DATA PREP
+merged_prep <- merged_recipe %>%
+  prep()
+
+merged_prep
+```
+
+12. Random Forest
+```{r}
+
+```
+
+13. Elastic Net
+```{r}
+
+```
+
+14. XGBoost
+```{r}
+
+```
+
+15. Conditional Inference Tree
+```{r}
+
 ```
 
 
-#potential open-source data to add
+16. Comparison of RMSE and R2 Values
 ```{r}
-#Weather Data like Growing Degree Days (GDD) from NOAA/PRISM(US)
-#can add column like rainfall_30days_post_planting and GDD_silking_period
-
-#STEPS FOR GDD from NOAA/PRISM(US)
-#First extract Tmax and Tmin (daily max and min values from specific long and lats)
-#Then, calculate GDD from daily temperatures by latitude and longitude 
-#GDD = ((Tmax + Tmin)/2) - (Tbase)
-
-#Base Temperature for GDD for Corn is 10C  https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html 
-
-#ALSO LOOK INTO NASA POWER for this data
-
-
-
-#Soil Characteristics from SoilGrids by Lat/Long
-#can add column like CEC (cation exchange capacity) or soil_texture (i.e. sand/silt/clay%) or bulk_density or water_holding_capacity
+#Make a table of the RMSE and R2 Values to compare directly
 ```
 
+17. Final Conclusion
+```{r}
+#Which model we chose
+```
