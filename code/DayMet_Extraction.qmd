@@ -77,8 +77,10 @@ daymet_all_unnest1 <- daymet_all %>%
     values_from = value
   ) %>%
   janitor::clean_names() %>%
-  mutate(tmax_deg_c_rounded_down = pmin(tmax_deg_c, 30)) %>%
-  mutate(gdd = round((tmax_deg_c_rounded_down + tmin_deg_c)/2) - 10) %>% #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
+  mutate(tmax30_deg_c = pmin(tmax_deg_c, 30)) %>% #above 30, temp does not increase GDD
+  mutate(tmin10_deg_c = pmax(tmin_deg_c, 10)) %>%
+  mutate(gdd = round((tmax30_deg_c + tmin10_deg_c)/2) - 10) %>% #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
+  mutate(gdd_rounded = pmax(gdd, 0)) %>%
   select(-site_2, -year_2)
 
 daymet_all_unnest1
