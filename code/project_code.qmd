@@ -9,8 +9,9 @@ author: Group 1 (Mari, Oluwatomide)
 ---
 #1. Loading Library
 ```{r, warning = False, message = False}
+#install.packages("lightgbm")
 library(tidyverse)
-library(randomForest)
+library(lightgbm)
 library(xgboost)
 library(caret)
 library(lubridate)
@@ -22,6 +23,9 @@ library(ranger)
 library(finetune)
 library(ggridges)
 library(doParallel)
+library(glmnet)
+library(finetune)
+library(janitor)
 ```
 
 
@@ -245,7 +249,7 @@ merged_test <- testing(merged_split)
 
 ```
 
-10. Distribution of Yield
+#10. Distribution of Yield
 ```{r}
 ggplot() +
   geom_density(data = merged_train, 
@@ -256,7 +260,7 @@ ggplot() +
                color = "blue") 
 ```
 
-11. Recipe and Prep for Training Model
+#11. Recipe and Prep for Training Model
 ```{r}
 #RECIPE
 merged_recipe <- recipe(yield_mg_ha ~ ., data = merged_train) %>%
@@ -273,20 +277,364 @@ merged_prep
 ```
 
 
-13. XGBoost
-```{r}
+#12. XGBoost
+##a. Setiing Up
+```{r, xgb_spec}
+###setting up xgboost
 
+xgb_spec <- 
+  boost_tree(
+    trees = tune(),
+    tree_depth = tune(),
+    min_n = tune(),
+    learn_rate = tune()
+    ) %>%
+  set_engine ("xgboost") %>%
+  set_mode("regression")
+  
+
+```
+
+##b. Cross Validation
+```{r}
+### cross-validation
+set.seed(235)
+resampling_foldcv <- vfold_cv(merged_train, v = 10)
+
+###Sampling using Latin-Hypercube
+xgb_grid <- grid_latin_hypercube(
+  tree_depth(),
+  min_n(),
+  learn_rate(),
+  trees(),
+  size = 50
+)
+### Adaptive Grid Search to Identify best model later
+set.seed(76544)
+registerDoParallel(cores = parallel::detectCores() - 1) 
+xgb_res <- tune_race_anova(object = xgb_spec,
+                      preprocessor = merged_recipe,
+                      resamples = resampling_foldcv,
+                      grid = xgb_grid,
+                      control = control_race(save_pred = TRUE))
+
+stopImplicitCluster()
+
+plot_race(xgb_res)
+
+### Select the best model based on Race Results (highest r2)
+best_r2 <- xgb_res %>%
+  select_best(metric = "rsq") %>%
+  mutate(source = "best_r2")
+
+###Final Specification
+final_spec <- boost_tree(
+  trees = best_r2$trees,
+  tree_depth = best_r2$tree_depth,
+  min_n = best_r2$min_n,
+  learn_rate = best_r2$learn_rate
+) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+```
+
+##c. Validation
+```{r}
+###Validation
+set.seed(10)
+final_fit_xgb <- last_fit(final_spec,
+                merged_recipe,
+                split = merged_split)
+final_fit_xgb %>%
+  collect_predictions() #provides predictions on the test set
+final_fit_xgb %>%
+  collect_metrics() #gives the rmse and r2 on the test set
 ```
 
 
 
 
-16. Comparison of RMSE and R2 Values
+#13. LightGBM
+```{r, lgbm_spec}
+lgbm_spec <- boost_tree(
+  trees = tune(),
+  tree_depth = tune(),
+  learn_rate = tune(),
+  loss_reduction = tune(),
+  min_n = tune(),
+  sample_size = tune()
+) %>%
+  set_engine("lightgbm") %>%
+  set_mode("regression")
+lgbm_spec
+
+
+#creating workflow
+wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(lgbm_model)
+```
+
+```{r}
+set.seed(235) 
+resampling_foldcv <- vfold_cv(merged_train, # Create 10-fold cross-validation resampling object from training data
+                              v = 10)
+
+resampling_foldcv
+resampling_foldcv$splits[[1]]
+```
+
+### c. Hyperparameter grid with Latin Hypercube Sampling
+```{r }
+lgbm_grid <- grid_latin_hypercube(
+  tree_depth(), 
+  min_n(),
+  learn_rate(),
+  loss_reduction(),
+  trees(),
+  sample_prop(),
+  size = 100
+)
+
+lgbm_grid
+```
+
+```{r}
+ggplot(data = lgbm_grid,
+       aes(x = tree_depth, 
+           y = min_n)) +
+  geom_point(aes(color = factor(learn_rate),
+                 size = trees),
+             alpha = .5,
+             show.legend = FALSE)
+```
+
+#Model Tuning
+
+```{r xgb_grid_result}
+set.seed(76544)
+registerDoParallel(cores = parallel::detectCores() -1)
+lgbm_res <- tune_race_anova(object = lgbm_spec,
+                      preprocessor = merged_recipe,
+                      resamples = resampling_foldcv,
+                      grid = lgbm_grid,
+                      control = control_race(save_pred = TRUE))
+stopImplicitCluster()
+
+
+beepr::beep()
+lgbm_res$.metrics[[2]]
+```
+
+Select Best Models
+```{r}
+# Based on lowest RMSE
+best_rmse <- lgbm_res %>% 
+  select_best(metric = "rmse")%>% 
+  mutate(source = "best_rmse")
+
+best_rmse
+
+```
+
+```{r}
+# Based on lowers RMSE within 1% loss
+best_rmse_pct_loss <- lgbm_res %>% 
+  select_by_pct_loss("min_n",
+                     metric = "rmse",
+                     limit = 1
+                     )%>% 
+  mutate(source = "best_rmse_pct_loss")
+
+best_rmse_pct_loss
+```
+
+```{r}
+# Based on lowest RMSE within 1 se
+best_rmse_one_std_err <- lgbm_res %>% 
+  select_by_one_std_err(metric = "rmse",
+                        eval_time = 100,
+                        trees
+                        )%>% 
+  mutate(source = "best_rmse_one_std_err")
+
+best_rmse_one_std_err
+```
+
+Here we use all three methods which we learn in this class for R2.
+
+```{r}
+# Based on greatest R2
+best_r2 <- lgbm_res %>% 
+  select_best(metric = "rsq")%>% 
+  mutate(source = "best_r2")
+
+best_r2
+```
+
+```{r}
+# Based on lowers R2 within 1% loss
+best_r2_pct_loss <- lgbm_res %>% 
+  select_by_pct_loss("min_n",
+                     metric = "rsq",
+                     limit = 1
+                     ) %>% 
+  mutate(source = "best_r2_pct_loss")
+
+best_r2_pct_loss
+```
+
+```{r}
+# Based on lowest R2 within 1 se
+best_r2_one_std_error <- lgbm_res %>% 
+  select_by_one_std_err(metric = "rsq",
+                        eval_time = 100,
+                        trees
+                        ) %>%
+  mutate(source = "best_r2_one_std_error")
+
+best_r2_one_std_error
+```
+
+#Compare and Finalize Model
+
+```{r comparing values}
+best_rmse %>% 
+  bind_rows(best_rmse_pct_loss, 
+            best_rmse_one_std_err, 
+            best_r2, 
+            best_r2_pct_loss, 
+            best_r2_one_std_error)
+```
+
+#Final Specification
+
+```{r final_spec_fit}
+final_spec <- boost_tree(
+  trees = best_r2$trees,           # Number of boosting rounds (trees)
+  tree_depth = best_r2$tree_depth, # Maximum depth of each tree
+  min_n = best_r2$min_n,           # Minimum number of samples to split a node
+  learn_rate = best_r2$learn_rate  # Learning rate (step size shrinkage)
+) %>%
+  set_engine("lightgbm") %>%
+  set_mode("regression")
+
+final_spec
+```
+
+#Final Fit and Predictions
+
+#Validation
+
+```{r final_fit}
+set.seed(10)
+final_fit <- last_fit(final_spec,
+                merged_recipe,
+                split = merged_split)
+
+final_fit %>%
+  collect_predictions()
+```
+
+#Evaluate on Test Set
+
+```{r final_fit_metrics}
+final_fit %>%
+  collect_metrics()
+```
+
+
+#Evaluate on Training Set
+
+```{r}
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(merged_prep, 
+                  merged_train)) %>%
+  augment(new_data = bake(merged_prep, 
+                          merged_train)) %>% 
+  rmse(yield_mg_ha, .pred) %>%
+  bind_rows(
+    
+    
+# R2
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(merged_prep, 
+                  merged_train)) %>%
+  augment(new_data = bake(merged_prep, 
+                          merged_train)) %>% 
+  rsq(yield_mg_ha, .pred))
+```
+
+#14: Comparing Predicted vs Observed Plots
+
+```{r}
+final_fit_xgb %>%
+  collect_predictions() %>%
+  ggplot(aes(x = yield_mg_ha,
+             y = .pred)) +
+  geom_point() +
+  geom_abline() +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(20, 40)) +
+  scale_y_continuous(limits = c(20, 40)) 
+```
+
+```{r}
+final_fit_lgbm %>%
+  collect_predictions() %>%
+  ggplot(aes(x = yield_mg_ha,
+             y = .pred)) +
+  geom_point() +
+  geom_abline() +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(20, 40)) +
+  scale_y_continuous(limits = c(20, 40))
+```
+
+
+#15: Comparing Variable Importances
+```{r}
+#XGBoost
+final_spec_xgb %>%
+  fit(yield_mg_ha ~ .,
+         data = bake(merged_prep, merged_train)) %>% #There little change in variable improtance if you use full dataset
+    vi() %>%
+  mutate(
+    Variable = fct_reorder(Variable, 
+                           Importance)
+  ) %>%
+  ggplot(aes(x = Importance, 
+             y = Variable)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL)
+
+
+#LightGBM
+final_spec_lgbm %>%
+  fit(yield_mg_ha ~ .,
+         data = bake(merged_prep, merged_train)) %>% 
+    vi() %>%
+  mutate(
+    Variable = fct_reorder(Variable, 
+                           Importance)
+  ) %>%
+  ggplot(aes(x = Importance, 
+             y = Variable)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL)
+```
+
+
+#16. Comparison of RMSE and R2 Values
 ```{r}
 #Make a table of the RMSE and R2 Values to compare directly
 ```
 
-17. Final Conclusion
+#17. Predicting Testing_Submission
 ```{r}
 #Which model we chose
 ```
