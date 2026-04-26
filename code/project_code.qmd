@@ -9,8 +9,9 @@ author: Group 1 (Mari, Oluwatomide)
 ---
 #1. Loading Library
 ```{r, warning = False, message = False}
+#install.packages("lightgbm")
 library(tidyverse)
-library(randomForest)
+library(lightgbm)
 library(xgboost)
 library(caret)
 library(lubridate)
@@ -22,6 +23,9 @@ library(ranger)
 library(finetune)
 library(ggridges)
 library(doParallel)
+library(glmnet)
+library(finetune)
+library(janitor)
 ```
 
 
@@ -238,7 +242,7 @@ merged_test <- testing(merged_split)
 
 ```
 
-10. Distribution of Yield
+#10. Distribution of Yield
 ```{r}
 ggplot() +
   geom_density(data = merged_train, 
@@ -249,7 +253,7 @@ ggplot() +
                color = "blue") 
 ```
 
-11. Recipe and Prep for Training Model
+#11. Recipe and Prep for Training Model
 ```{r}
 #RECIPE
 merged_recipe <- recipe(yield_mg_ha ~ ., data = merged_train) %>%
@@ -265,381 +269,253 @@ merged_prep <- merged_recipe %>%
 merged_prep
 ```
 
-12. Random Forest
-```{r}
-library(tidymodels)
-library(tidyverse)
-library(glmnet)
-library(vip)
-library(ranger)
-library(finetune)
-```
-
-Specifying rf as our model type, asking to tune the hyperparameters
-```{r}
-rf_spec <- rand_forest(trees = tune(),
-                       mtry = tune()) %>%
-  set_engine("ranger") %>%
-  set_mode("regression")
-rf_spec
-```
-
-
-Defining our resampling strategy, using a 20-fold cross validation approach:  
-```{r resampling_foldcv}
-set.seed(134549)
-resampling_foldcv <- vfold_cv(merged_train, 
-                              v = 20)
-
-resampling_foldcv
-resampling_foldcv$splits[[1]]
-```
-
-
-Restricting iterations to 100 for our algorithm
-```{r rf_grid_result}
-set.seed(1276544)
-rf_grid_result <- tune_sim_anneal(object = rf_spec,
-                     preprocessor = merged_recipe,
-                     resamples = resampling_foldcv,
-                    iter = 100
-                     )
-
-beepr::beep()
-
-rf_grid_result
-rf_grid_result$.metrics[[2]]
-```
-
-
-Calculating RMSE
-```{r RMSE}
-rf_grid_result %>%
-  collect_metrics() %>%
-  filter(.metric == "rmse") %>%
-  ggplot(aes(x = mtry, 
-             y = trees 
-             )) +
-  geom_path(group = 1) +
-  geom_point(aes(color = mean),
-             size = 3) + 
-  scale_color_viridis_b() +
-  geom_text(aes(label = .iter), nudge_x = .0005) +
-  labs(title = "RMSE")
-```
-
-Calculating R2
-```{r R2}
-rf_grid_result %>%
-  collect_metrics() %>%
-  filter(.metric == "rsq") %>%
-  ggplot(aes(x = mtry, 
-             y = trees 
-             )) +
-  geom_path(group = 1) +
-  geom_point(aes(color = mean),
-             size = 3) + 
-  scale_color_viridis_b() +
-  geom_text(aes(label = .iter), nudge_x = .0005) +
-  labs(title = "R2")
-
-```
-
-
-Selecting the best model based on RMSE (lowest) 
-```{r}
-best_rf_rmse <- rf_grid_result %>%
-  select_by_pct_loss("trees", 
-                     metric = "rmse",
-                     limit = 2)
-
-best_rf_rmse
-
-```
-
-Selecting the best model based on R2 (highest) 
-```{r}
-best_rf_r2 <- rf_grid_result %>%
-  select_by_pct_loss("trees",
-                     metric = "rsq",
-                     limit = 2)
-best_rf_r2
-
-```
-
-Let's use the hyperparameter values that optimized R2 to fit our final model.
-
-```{r final_spec}
-final_rf_spec <- rand_forest(trees = best_r2$trees,
-                          mtry = best_r2$mtry) %>%
-  set_engine("ranger",
-             importance = "permutation") %>%
-  set_mode("regression")
-  
-
-final_rf_spec
-```
-
-
-Validation
-```{r}
-final_rf_fit <- last_fit(final_rf_spec,
-                merged_recipe,
-                split = merged_split)
-
-final_rf_fit %>%
-  collect_predictions()
-```
-
-Metrics on the **test set**:
-```{r}
-final_rf_fit %>%
-  collect_metrics()
-```
-
-Metrics on **train set** 
-```{r}
-# RMSE
-final_rf_spec %>%
-  fit(yield_mg_ha ~ .,
-      data = bake(merged_prep, 
-                  merged_train)) %>%
-  augment(new_data = bake(merged_prep, 
-                          merged_train)) %>% 
-  rmse(yield_mg_ha, .pred) %>%
-  bind_rows(
-    
-    
-    # R2
-    final_rf_spec %>%
-      fit(yield_mg_ha ~ .,
-          data = bake(merged_prep, 
-                      merged_train)) %>%
-      augment(new_data = bake(merged_prep, 
-                              merged_train)) %>% 
-      rsq(yield_mg_ha, .pred)
-    
-  )
-
-```
-
-Predicted vs. observed plot:  
-```{r}
-final_rf_fit %>%
-  collect_predictions() %>%
-  ggplot(aes(x = yield_mg_ha,
-             y = .pred)) +
-  geom_point() +
-  geom_abline() +
-  geom_smooth(method = "lm") +
-  scale_x_continuous(limits = c(20, 40)) +
-  scale_y_continuous(limits = c(20, 40)) 
-```
-
-Variable of importance
-```{r}
-final_rf_spec %>%
-  fit(yield_mg_ha ~ .,
-         data = bake(merged_prep, weather_merged)) %>%
-    vi() %>%
-  mutate(
-    Variable = fct_reorder(Variable, 
-                           Importance)
-  ) %>%
-  ggplot(aes(x = Importance, 
-             y = Variable)) +
-  geom_col() +
-  scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL)
-    
-```
-
-
-13. Elastic Net
-```{r}
-enet_spec <-
-  # Specifying linear regression as our model type, asking to tune the hyperparameters
-linear_reg(penalty = tune(),
-           mixture = tune()
-           ) %>%
-  # Specify the engine
-set_engine("glmnet")
-
-enet_spec
-```
-
-Hyper-parameter tuning  
-Creating a **grid** to perform our hyperparameter tuninig search with multiple combinations of values for penalty and mixture:
-
-```{r enet_grid}
-enet_grid <- crossing(penalty = seq(0, 
-                                    10, 
-                                    by = 1),
-                      mixture = seq(0, 
-                                    1, 
-                                    by = 0.1))
-
-enet_grid
-
-ggplot(data = enet_grid,
-       aes(x = mixture,
-           y = penalty)) +
-  geom_point()
-```
-
-Grid search 
-```{r enet_grid_result}
-enet_grid_result <- tune_grid(enet_spec,
-                              preprocessor = merged_recipe,
-                              grid = enet_grid,
-                              resamples = resampling_foldcv)
-
-enet_grid_result
-enet_grid_result$.metrics[[1]]
-```
-
-RMSE for Enet
-```{r RMSE}
-enet_grid_result %>%
-  collect_metrics() %>% 
-  filter(.metric == "rmse") %>%
-  ggplot(aes(x = penalty, 
-             y = mean, 
-             color = factor(mixture), 
-             group = factor(mixture))) +
-  geom_line() +
-  geom_point() + 
-  labs(y = "RMSE")
-```
-
-R2 for Enet
-```{r R2}
-enet_grid_result %>%
-  collect_metrics() %>%
-  filter(.metric == "rsq") %>%
-  ggplot(aes(x = penalty, 
-             y = mean, 
-             color = factor(mixture), 
-             group = factor(mixture))) +
-  geom_line() +
-  geom_point() + 
-  labs(y = "R2")
-```
-
-Extracting hyperparameters from the best model based on lowest RMSE
-```{r}
-best_enet_rmse <- enet_grid_result %>% select_best(metric = "rmse")
-
-best_enet_rmse
-```
-
-Extracting hyperparameters from the best model based on highest R2
-```{r}
-best_enet_r2 <- enet_grid_result %>%
-  select_best(metric = "rsq")
-
-best_enet_r2
-```
-
-Let's use the hyperparameter values that optimized R2 to fit our final model.
-```{r final_spec}
-final_enet_spec <- linear_reg(penalty = 0.7,
-                         mixture = 0) %>%
-  set_engine("glmnet")
-
-final_enet_spec
-```
-
-
-```{r final_fit}
-final_enet_fit <- last_fit(final_enet_spec,
-                      merged_recipe,
-                      split = merged_split)
-
-final_enet_fit %>%
-  collect_predictions()
-```
-
-Metrics on the **test set**:
-```{r}
-final_enet_fit %>% collect_metrics()
-```
-
-Metrics on **train set** 
-```{r}
-# RMSE
-final_enet_spec %>%
-  fit(yield_mg_ha ~ .,
-      data = bake(merged_prep, 
-                  merged_train)) %>%
-  augment(new_data = bake(merged_prep, 
-                          merged_train)) %>% 
-  rmse(yield_mg_ha, .pred) %>%
-  bind_rows(
-    
-    
-    # R2
-    final_enet_spec %>%
-      fit(yield_mg_ha ~ .,
-          data = bake(merged_prep, 
-                      merged_train)) %>%
-      augment(new_data = bake(merged_prep, 
-                              merged_train)) %>% 
-      rsq(yield_mg_ha, .pred)
-    
-  )
-
-```
-
-Predicted vs. observed plot:  
-```{r}
-final_enet_fit %>%
-  collect_predictions() %>%
-  ggplot(aes(x = yield_mg_ha,
-             y = .pred)) +
-  geom_point() +
-  geom_abline() +
-  geom_smooth(method = "lm") +
-  scale_x_continuous(limits = c(20, 40)) +
-  scale_y_continuous(limits = c(20, 40)) 
-```
-
-Coefficients:  
-```{r}
-final_enet_spec %>%
-  fit(yield_mg_ha ~ .,
-         data = bake(merged_prep, weather_merged)) %>%
-  tidy() %>%
-  arrange(desc(estimate))
-
-```
-
-Variable of importance
-```{r}
-final_enet_spec %>%
-  fit(yield_mg_ha ~ .,
-         data = bake(merged_prep, weather_merged)) %>%
-    vi() %>%
-  mutate(
-    Variable = fct_reorder(Variable, 
-                           Importance)
-  ) %>%
-  ggplot(aes(x = Importance, 
-             y = Variable)) +
-  geom_col() +
-  scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL)
-    
-```
-
-
-
 14. XGBoost
 ```{r}
 
 ```
 
+LightGBM
+```{r, lgbm_spec}
+lgbm_spec <- boost_tree(
+  trees = tune(),
+  tree_depth = tune(),
+  learn_rate = tune(),
+  loss_reduction = tune(),
+  min_n = tune(),
+  sample_size = tune()
+) %>%
+  set_engine("lightgbm") %>%
+  set_mode("regression")
+lgbm_spec
 
+
+#creating workflow
+wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(lgbm_model)
+```
+
+```{r}
+set.seed(235) #34549
+resampling_foldcv <- vfold_cv(merged_train, # Create 10-fold cross-validation resampling object from training data
+                              v = 10)
+
+resampling_foldcv
+resampling_foldcv$splits[[1]]
+```
+
+### c. Hyperparameter grid with Latin Hypercube Sampling
+```{r }
+lgbm_grid <- grid_latin_hypercube(
+  tree_depth(), 
+  min_n(),
+  learn_rate(),
+  loss_reduction(),
+  trees(),
+  sample_prop(),
+  size = 100
+)
+
+lgbm_grid
+```
+
+```{r}
+ggplot(data = lgbm_grid,
+       aes(x = tree_depth, 
+           y = min_n)) +
+  geom_point(aes(color = factor(learn_rate),
+                 size = trees),
+             alpha = .5,
+             show.legend = FALSE)
+```
+
+#Model Tuning
+
+```{r xgb_grid_result}
+set.seed(76544)
+registerDoParallel(cores = parallel::detectCores() -1)
+lgbm_res <- tune_race_anova(object = lgbm_spec,
+                      preprocessor = merged_recipe,
+                      resamples = resampling_foldcv,
+                      grid = lgbm_grid,
+                      control = control_race(save_pred = TRUE))
+stopImplicitCluster()
+
+
+beepr::beep()
+lgbm_res$.metrics[[2]]
+```
+
+Select Best Models
+```{r}
+# Based on lowest RMSE
+best_rmse <- lgbm_res %>% 
+  select_best(metric = "rmse")%>% 
+  mutate(source = "best_rmse")
+
+best_rmse
+
+```
+
+```{r}
+# Based on lowers RMSE within 1% loss
+best_rmse_pct_loss <- lgbm_res %>% 
+  select_by_pct_loss("min_n",
+                     metric = "rmse",
+                     limit = 1
+                     )%>% 
+  mutate(source = "best_rmse_pct_loss")
+
+best_rmse_pct_loss
+```
+
+```{r}
+# Based on lowest RMSE within 1 se
+best_rmse_one_std_err <- lgbm_res %>% 
+  select_by_one_std_err(metric = "rmse",
+                        eval_time = 100,
+                        trees
+                        )%>% 
+  mutate(source = "best_rmse_one_std_err")
+
+best_rmse_one_std_err
+```
+
+Here we use all three methods which we learn in this class for R2.
+
+```{r}
+# Based on greatest R2
+best_r2 <- lgbm_res %>% 
+  select_best(metric = "rsq")%>% 
+  mutate(source = "best_r2")
+
+best_r2
+```
+
+```{r}
+# Based on lowers R2 within 1% loss
+best_r2_pct_loss <- lgbm_res %>% 
+  select_by_pct_loss("min_n",
+                     metric = "rsq",
+                     limit = 1
+                     ) %>% 
+  mutate(source = "best_r2_pct_loss")
+
+best_r2_pct_loss
+```
+
+```{r}
+# Based on lowest R2 within 1 se
+best_r2_one_std_error <- lgbm_res %>% 
+  select_by_one_std_err(metric = "rsq",
+                        eval_time = 100,
+                        trees
+                        ) %>%
+  mutate(source = "best_r2_one_std_error")
+
+best_r2_one_std_error
+```
+
+#Compare and Finalize Model
+
+```{r comparing values}
+best_rmse %>% 
+  bind_rows(best_rmse_pct_loss, 
+            best_rmse_one_std_err, 
+            best_r2, 
+            best_r2_pct_loss, 
+            best_r2_one_std_error)
+```
+
+#Final Specification
+
+```{r final_spec_fit}
+final_spec <- boost_tree(
+  trees = best_r2$trees,           # Number of boosting rounds (trees)
+  tree_depth = best_r2$tree_depth, # Maximum depth of each tree
+  min_n = best_r2$min_n,           # Minimum number of samples to split a node
+  learn_rate = best_r2$learn_rate  # Learning rate (step size shrinkage)
+) %>%
+  set_engine("lightgbm") %>%
+  set_mode("regression")
+
+final_spec
+```
+
+#Final Fit and Predictions
+
+#Validation
+
+```{r final_fit}
+set.seed(10)
+final_fit <- last_fit(final_spec,
+                merged_recipe,
+                split = merged_split)
+
+final_fit %>%
+  collect_predictions()
+```
+
+#Evaluate on Test Set
+
+```{r final_fit_metrics}
+final_fit %>%
+  collect_metrics()
+```
+
+
+#Evaluate on Training Set
+
+```{r}
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(merged_prep, 
+                  merged_train)) %>%
+  augment(new_data = bake(merged_prep, 
+                          merged_train)) %>% 
+  rmse(yield_mg_ha, .pred) %>%
+  bind_rows(
+    
+    
+# R2
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(merged_prep, 
+                  merged_train)) %>%
+  augment(new_data = bake(merged_prep, 
+                          merged_train)) %>% 
+  rsq(yield_mg_ha, .pred))
+```
+
+#Predicted vs Observed Plot
+
+```{r}
+final_fit %>%
+  collect_predictions() %>%
+  ggplot(aes(x = yield_mg_ha,
+             y = .pred)) +
+  geom_point() +
+  geom_abline() +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(20, 40)) +
+  scale_y_continuous(limits = c(20, 40)) 
+
+
+#Variable Importance
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+         data = bake(merged_prep, merged_train)) %>% #There little change in variable improtance if you use full dataset
+    vi() %>%
+  mutate(
+    Variable = fct_reorder(Variable, 
+                           Importance)
+  ) %>%
+  ggplot(aes(x = Importance, 
+             y = Variable)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL)
+```
 
 
 16. Comparison of RMSE and R2 Values
