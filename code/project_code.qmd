@@ -40,10 +40,6 @@ training_trait <- read_csv("../data/training/training_trait.csv")
 
 testing_submission <- read_csv("../data/testing/testing_submission.csv")
 
-#view(training_metadata)
-#view(training_soil)
-#view(training_trait)
-view(testing_submission)
 
 ```
 
@@ -136,7 +132,6 @@ write_csv(training_merged1,"../data/training_merged1.csv")
 setdiff(testing_submission$site, training_merged1$site)  # sites in df1 but not df2
 setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not df1
 
-view(training_merged1)
 ```
 
 ```{r, warning = False, message = False}
@@ -172,6 +167,7 @@ fieldweather1 <- fieldweatherdata %>%
 
 ```
 
+
 Merging file with weather variables by growing window (date planted:date harvested)
 ```{r}
 weather_merged <- training_merged1 %>%
@@ -180,7 +176,8 @@ weather_merged <- training_merged1 %>%
     weather_summary = list(
       fieldweather1 %>%
         filter(date >= date_planted,
-               date <= date_harvested) %>%
+               date <= date_harvested,
+               year(date) == year(date_planted)) %>%
         summarise(across(
             .cols = c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
             .fns = mean,
@@ -199,7 +196,15 @@ head(weather_merged)
 write_csv(weather_merged, "../output/weather_merged.csv")
 
 #######SUM GDD ROUNDED IS 10 ORDERS TOO LARGE#######
+#######Making loop with growing degree days that iterates by year. #######Currently it is adding from the first year's planting date to the last year's harvest date
 ```
+
+#Unique Planting Day - Harvest Day Pairs
+```{r}
+unique_day_pairs <- weather_merged %>%
+  distinct(date_planted, date_harvested)
+```
+
 
 
 # 8. Data Visualization 
@@ -236,8 +241,10 @@ set.seed(76332)
 
 # Splitting the Data for Training
 merged_split <- initial_split(weather_merged, prop = 0.7, strata = yield_mg_ha)
+
 merged_train <- training(merged_split) %>%
   select(-c(date_planted, date_harvested))
+
 merged_test <- testing(merged_split)
 
 ```
@@ -269,11 +276,92 @@ merged_prep <- merged_recipe %>%
 merged_prep
 ```
 
+<<<<<<< HEAD
 #12. XGBoost
 ```{r}
 
 ```
 
+=======
+
+#12. XGBoost
+##a. Setiing Up
+```{r, xgb_spec}
+###setting up xgboost
+
+xgb_spec <- 
+  boost_tree(
+    trees = tune(),
+    tree_depth = tune(),
+    min_n = tune(),
+    learn_rate = tune()
+    ) %>%
+  set_engine ("xgboost") %>%
+  set_mode("regression")
+  
+
+```
+
+##b. Cross Validation
+```{r}
+### cross-validation
+set.seed(235)
+resampling_foldcv <- vfold_cv(merged_train, v = 10)
+
+###Sampling using Latin-Hypercube
+xgb_grid <- grid_latin_hypercube(
+  tree_depth(),
+  min_n(),
+  learn_rate(),
+  trees(),
+  size = 50
+)
+### Adaptive Grid Search to Identify best model later
+set.seed(76544)
+registerDoParallel(cores = parallel::detectCores() - 1) 
+xgb_res <- tune_race_anova(object = xgb_spec,
+                      preprocessor = merged_recipe,
+                      resamples = resampling_foldcv,
+                      grid = xgb_grid,
+                      control = control_race(save_pred = TRUE))
+
+stopImplicitCluster()
+
+plot_race(xgb_res)
+
+### Select the best model based on Race Results (highest r2)
+best_r2 <- xgb_res %>%
+  select_best(metric = "rsq") %>%
+  mutate(source = "best_r2")
+
+###Final Specification
+final_spec <- boost_tree(
+  trees = best_r2$trees,
+  tree_depth = best_r2$tree_depth,
+  min_n = best_r2$min_n,
+  learn_rate = best_r2$learn_rate
+) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+```
+
+##c. Validation
+```{r}
+###Validation
+set.seed(10)
+final_fit_xgb <- last_fit(final_spec,
+                merged_recipe,
+                split = merged_split)
+final_fit_xgb %>%
+  collect_predictions() #provides predictions on the test set
+final_fit_xgb %>%
+  collect_metrics() #gives the rmse and r2 on the test set
+```
+
+
+
+
+>>>>>>> f090c2ee1b60f325a366bfff656a30684f17ef52
 #13. LightGBM
 ```{r, lgbm_spec}
 lgbm_spec <- boost_tree(
@@ -296,7 +384,7 @@ wf <- workflow() %>%
 ```
 
 ```{r}
-set.seed(235) #34549
+set.seed(235) 
 resampling_foldcv <- vfold_cv(merged_train, # Create 10-fold cross-validation resampling object from training data
                               v = 10)
 
@@ -469,10 +557,10 @@ final_spec %>%
   rsq(yield_mg_ha, .pred))
 ```
 
-#Predicted vs Observed Plot
+#14: Comparing Predicted vs Observed Plots
 
 ```{r}
-final_fit %>%
+final_fit_xgb %>%
   collect_predictions() %>%
   ggplot(aes(x = yield_mg_ha,
              y = .pred)) +
@@ -481,12 +569,43 @@ final_fit %>%
   geom_smooth(method = "lm") +
   scale_x_continuous(limits = c(20, 40)) +
   scale_y_continuous(limits = c(20, 40)) 
+```
+
+```{r}
+final_fit_lgbm %>%
+  collect_predictions() %>%
+  ggplot(aes(x = yield_mg_ha,
+             y = .pred)) +
+  geom_point() +
+  geom_abline() +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(20, 40)) +
+  scale_y_continuous(limits = c(20, 40))
+```
 
 
-#Variable Importance
-final_spec %>%
+#15: Comparing Variable Importances
+```{r}
+#XGBoost
+final_spec_xgb %>%
   fit(yield_mg_ha ~ .,
          data = bake(merged_prep, merged_train)) %>% #There little change in variable improtance if you use full dataset
+    vi() %>%
+  mutate(
+    Variable = fct_reorder(Variable, 
+                           Importance)
+  ) %>%
+  ggplot(aes(x = Importance, 
+             y = Variable)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL)
+
+
+#LightGBM
+final_spec_lgbm %>%
+  fit(yield_mg_ha ~ .,
+         data = bake(merged_prep, merged_train)) %>% 
     vi() %>%
   mutate(
     Variable = fct_reorder(Variable, 
@@ -500,12 +619,12 @@ final_spec %>%
 ```
 
 
-16. Comparison of RMSE and R2 Values
+#16. Comparison of RMSE and R2 Values
 ```{r}
 #Make a table of the RMSE and R2 Values to compare directly
 ```
 
-17. Final Conclusion
+#17. Predicting Testing_Submission
 ```{r}
 #Which model we chose
 ```
