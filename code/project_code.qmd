@@ -269,12 +269,12 @@ merged_prep <- merged_recipe %>%
 merged_prep
 ```
 
-14. XGBoost
+#12. XGBoost
 ```{r}
 
 ```
 
-LightGBM
+#13. LightGBM
 ```{r, lgbm_spec}
 lgbm_spec <- boost_tree(
   trees = tune(),
@@ -302,10 +302,9 @@ resampling_foldcv <- vfold_cv(merged_train, # Create 10-fold cross-validation re
 
 resampling_foldcv
 resampling_foldcv$splits[[1]]
-```
 
-### c. Hyperparameter grid with Latin Hypercube Sampling
-```{r }
+
+#Hyperparameter grid with Latin Hypercube Sampling
 lgbm_grid <- grid_latin_hypercube(
   tree_depth(), 
   min_n(),
@@ -317,9 +316,8 @@ lgbm_grid <- grid_latin_hypercube(
 )
 
 lgbm_grid
-```
 
-```{r}
+#plot
 ggplot(data = lgbm_grid,
        aes(x = tree_depth, 
            y = min_n)) +
@@ -330,7 +328,6 @@ ggplot(data = lgbm_grid,
 ```
 
 #Model Tuning
-
 ```{r xgb_grid_result}
 set.seed(76544)
 registerDoParallel(cores = parallel::detectCores() -1)
@@ -346,19 +343,15 @@ beepr::beep()
 lgbm_res$.metrics[[2]]
 ```
 
-Select Best Models
 ```{r}
-# Based on lowest RMSE
+#Select Best Models based on lowest RMSE
 best_rmse <- lgbm_res %>% 
   select_best(metric = "rmse")%>% 
   mutate(source = "best_rmse")
 
 best_rmse
 
-```
-
-```{r}
-# Based on lowers RMSE within 1% loss
+#Select Best Models based on lowers RMSE within 1% loss
 best_rmse_pct_loss <- lgbm_res %>% 
   select_by_pct_loss("min_n",
                      metric = "rmse",
@@ -367,9 +360,7 @@ best_rmse_pct_loss <- lgbm_res %>%
   mutate(source = "best_rmse_pct_loss")
 
 best_rmse_pct_loss
-```
 
-```{r}
 # Based on lowest RMSE within 1 se
 best_rmse_one_std_err <- lgbm_res %>% 
   select_by_one_std_err(metric = "rmse",
@@ -379,20 +370,14 @@ best_rmse_one_std_err <- lgbm_res %>%
   mutate(source = "best_rmse_one_std_err")
 
 best_rmse_one_std_err
-```
 
-Here we use all three methods which we learn in this class for R2.
-
-```{r}
 # Based on greatest R2
 best_r2 <- lgbm_res %>% 
   select_best(metric = "rsq")%>% 
   mutate(source = "best_r2")
 
 best_r2
-```
 
-```{r}
 # Based on lowers R2 within 1% loss
 best_r2_pct_loss <- lgbm_res %>% 
   select_by_pct_loss("min_n",
@@ -402,9 +387,7 @@ best_r2_pct_loss <- lgbm_res %>%
   mutate(source = "best_r2_pct_loss")
 
 best_r2_pct_loss
-```
 
-```{r}
 # Based on lowest R2 within 1 se
 best_r2_one_std_error <- lgbm_res %>% 
   select_by_one_std_err(metric = "rsq",
@@ -417,7 +400,6 @@ best_r2_one_std_error
 ```
 
 #Compare and Finalize Model
-
 ```{r comparing values}
 best_rmse %>% 
   bind_rows(best_rmse_pct_loss, 
