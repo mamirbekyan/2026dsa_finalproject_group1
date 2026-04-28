@@ -168,6 +168,46 @@ fieldweather1 <- fieldweatherdata %>%
 ```
 
 
+```{r}
+weather_merged_new <- training_merged1 %>%
+  rowwise() %>%
+  mutate(
+    weather_summary = list(
+      fieldweather1 %>%
+        filter(
+          site == cur_data()$site,          # match site
+          year == cur_data()$year,          #use your year column
+          date >= date_planted,
+          date <= date_harvested
+        ) %>%
+        group_by(site, year) %>%
+        summarise(
+          across(
+            .cols = c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
+            .fns = mean,
+            .names = "mean_{.col}"
+          ),
+          across(
+            .cols = c(gdd_rounded, prcp_mm_day),
+            .fns = sum,
+            .names = "sum_{.col}"
+          ),
+          .groups = "drop"
+        )
+    )
+  ) %>%
+  unnest(weather_summary) %>%
+  ungroup() %>% 
+  select(-id, -replicate, -block)
+
+head(weather_merged_new)
+
+write_csv(weather_merged_new, "../output/weather_merged_new.csv")
+
+```
+
+
+
 Merging file with weather variables by growing window (date planted:date harvested)
 ```{r}
 weather_merged <- training_merged1 %>%
@@ -177,7 +217,8 @@ weather_merged <- training_merged1 %>%
       fieldweather1 %>%
         filter(date >= date_planted,
                date <= date_harvested,
-               year(date) == year(date_planted)) %>%
+               year(date) == year(date_planted)) %>%#filtering the data based on growing season
+        group_by(site, year)%>%
         summarise(across(
             .cols = c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
             .fns = mean,
@@ -198,6 +239,49 @@ write_csv(weather_merged, "../output/weather_merged.csv")
 #######SUM GDD ROUNDED IS 10 ORDERS TOO LARGE#######
 #######Making loop with growing degree days that iterates by year. #######Currently it is adding from the first year's planting date to the last year's harvest date
 ```
+
+
+```{r}
+setDT(training_merged1)
+setDT(fieldweather1)
+
+training_merged1 <- training_merged1[year != 2014]
+
+#create end of year
+training_merged1[, end_of_year := as.Date(paste0(year(date_planted), "-12-31"))]
+training_merged1[, harvest_cutoff := pmin(date_harvested, end_of_year)]
+
+
+weather_merged <- training_merged1 %>%
+  filter(year != 2014) %>%
+  mutate(
+    end_of_year = as.Date(paste0(year(date_planted), "-12-31")),
+    harvest_cutoff = pmin(date_harvested, end_of_year)
+  ) %>%
+  inner_join(fieldweather1, by = "site") %>%
+  filter(
+    date >= date_planted,
+    date <= harvest_cutoff
+  ) %>%
+  group_by(site, year = year(date_planted), month = month(date)) %>%
+  summarise(
+    across(
+      c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
+      ~ mean(.x, na.rm = TRUE),
+      .names = "mean_{.col}"
+    ),
+    across(
+      c(gdd_rounded, prcp_mm_day),
+      ~ sum(.x, na.rm = TRUE),
+      .names = "sum_{.col}"
+    ),
+    .groups = "drop"
+  )
+
+```
+
+
+
 
 #Unique Planting Day - Harvest Day Pairs
 ```{r}
