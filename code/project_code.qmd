@@ -168,135 +168,41 @@ fieldweather1 <- fieldweatherdata %>%
 ```
 
 
-```{r}
-weather_merged_new <- training_merged1 %>%
-  rowwise() %>%
-  mutate(
-    weather_summary = list(
-      fieldweather1 %>%
-        filter(
-          site == cur_data()$site,          # match site
-          year == cur_data()$year,          #use your year column
-          date >= date_planted,
-          date <= date_harvested
-        ) %>%
-        group_by(site, year) %>%
-        summarise(
-          across(
-            .cols = c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
-            .fns = mean,
-            .names = "mean_{.col}"
-          ),
-          across(
-            .cols = c(gdd_rounded, prcp_mm_day),
-            .fns = sum,
-            .names = "sum_{.col}"
-          ),
-          .groups = "drop"
-        )
-    )
-  ) %>%
-  unnest(weather_summary) %>%
-  ungroup() %>% 
-  select(-id, -replicate, -block)
-
-head(weather_merged_new)
-
-write_csv(weather_merged_new, "../output/weather_merged_new.csv")
-
-```
-
-
-
-Merging file with weather variables by growing window (date planted:date harvested)
-```{r}
-weather_merged <- training_merged1 %>%
-  rowwise() %>%
-  mutate(
-    weather_summary = list(
-      fieldweather1 %>%
-        filter(date >= date_planted,
-               date <= date_harvested,
-               year(date) == year(date_planted)) %>%#filtering the data based on growing season
-        group_by(site, year)%>%
-        summarise(across(
-            .cols = c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
-            .fns = mean,
-            .names = "mean_{.col}"),
-          across(
-            .cols = c(gdd_rounded, prcp_mm_day),
-            .fns = sum,
-            .names = "sum_{.col}"
-          ))))%>%
-  unnest(weather_summary) %>%
-  ungroup %>% 
-  select(-id, -replicate, -block)
-
-head(weather_merged)
-
-write_csv(weather_merged, "../output/weather_merged.csv")
-
-#######SUM GDD ROUNDED IS 10 ORDERS TOO LARGE#######
-#######Making loop with growing degree days that iterates by year. #######Currently it is adding from the first year's planting date to the last year's harvest date
-```
-
-
-```{r}
-setDT(training_merged1)
-setDT(fieldweather1)
-
-training_merged1 <- training_merged1[year != 2014]
-
-#create end of year
-training_merged1[, end_of_year := as.Date(paste0(year(date_planted), "-12-31"))]
-training_merged1[, harvest_cutoff := pmin(date_harvested, end_of_year)]
-
-
-weather_merged <- training_merged1 %>%
-  filter(year != 2014) %>%
-  mutate(
-    end_of_year = as.Date(paste0(year(date_planted), "-12-31")),
-    harvest_cutoff = pmin(date_harvested, end_of_year)
-  ) %>%
-  inner_join(fieldweather1, by = "site") %>%
-  filter(
-    date >= date_planted,
-    date <= harvest_cutoff
-  ) %>%
-  group_by(site, year = year(date_planted), month = month(date)) %>%
+```{r, warning=FALSE}
+weather_features <- training_merged1 %>%
+  select(site, year, date_planted, date_harvested) %>%
+  distinct() %>%
+  left_join(fieldweather1, by = c("site", "year")) %>%
+  filter(date >= date_planted,
+         date <= date_harvested) %>%
+  group_by(site, year, date_planted, date_harvested) %>%
   summarise(
+    n_days = n(),
+    sum_gdd = sum(gdd_rounded, na.rm = TRUE),
     across(
       c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
-      ~ mean(.x, na.rm = TRUE),
+      mean, na.rm = TRUE,
       .names = "mean_{.col}"
     ),
-    across(
-      c(gdd_rounded, prcp_mm_day),
-      ~ sum(.x, na.rm = TRUE),
-      .names = "sum_{.col}"
-    ),
+    sum_precip = sum(prcp_mm_day, na.rm = TRUE),
     .groups = "drop"
   )
 
+weather_summary <- training_merged1 %>%
+  left_join(weather_features,
+            by = c("site", "year", "date_planted", "date_harvested"))
+
+
+head(weather_summary)
+write_csv(weather_summary, "../output/weather_merged_new.csv")
 ```
-
-
-
-
-#Unique Planting Day - Harvest Day Pairs
-```{r}
-unique_day_pairs <- weather_merged %>%
-  distinct(date_planted, date_harvested)
-```
-
-
 
 # 8. Data Visualization 
 ```{r}
 #Plotting all variables by site
 
-allplots <- weather_merged %>%
-  pivot_longer(mean_dayl_s:sum_prcp_mm_day) %>%
+allplots <- weather_summary %>%
+  pivot_longer(sum_gdd:sum_precip) %>%
   group_by(name) %>%
   nest() %>%
   mutate(plot = map2(data, name,
@@ -324,7 +230,7 @@ allplots$plot
 set.seed(76332)
 
 # Splitting the Data for Training
-merged_split <- initial_split(weather_merged, prop = 0.7, strata = yield_mg_ha)
+merged_split <- initial_split(weather_merged_new, prop = 0.7, strata = yield_mg_ha)
 
 merged_train <- training(merged_split) %>%
   select(-c(date_planted, date_harvested))
@@ -360,13 +266,6 @@ merged_prep <- merged_recipe %>%
 merged_prep
 ```
 
-<<<<<<< HEAD
-#12. XGBoost
-```{r}
-
-```
-
-=======
 
 #12. XGBoost
 ##a. Setiing Up
@@ -445,7 +344,6 @@ final_fit_xgb %>%
 
 
 
->>>>>>> f090c2ee1b60f325a366bfff656a30684f17ef52
 #13. LightGBM
 ```{r, lgbm_spec}
 lgbm_spec <- boost_tree(
