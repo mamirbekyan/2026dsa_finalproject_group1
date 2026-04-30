@@ -761,6 +761,15 @@ write_csv(comparison_table,
 
 ```
 
+```{r}
+#creating an average for the growing window so that we can clculate GDD based on this range later. Created then renamed to the same column name as training_merged1 for consistency
+average_growing_window_testing_submission <- training_merged1 %>%
+  group_by(site, hybrid) %>%
+  summarise(
+    day_of_year_planted = round(mean(day_of_year_planted,na.rm = TRUE)),                          day_of_year_harvested = round(mean(day_of_year_harvested,na.rm = TRUE)))
+  
+                    
+```
 
 
 #17. Predicting Testing_Submission
