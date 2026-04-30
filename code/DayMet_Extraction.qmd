@@ -16,14 +16,14 @@ library(daymetr)
 library(purrr)
 ```
 
-<<<<<<< HEAD
+#MAKE MERGED TRAINING FILE 
 ```{r}
 training_metadata1 <- read_csv("../data/training_metadata1.csv")
 
 training_metadata1
 ```
 
-#Downloading weather data
+##Downloading weather data
 ```{r}
 training_metadata1
 daymet_one <- download_daymet(site = training_metadata1$site[1],
@@ -60,14 +60,14 @@ daymet_all
 ```
 
 
-Inspecting weather data for the first site-year. 
+##Inspecting weather data for the first site-year. 
 ```{r}
 daymet_all$weather[1]
 
 ```
 
 
-#Unnesting the weather column and making Growing Degree Day column 
+##Unnesting the weather column and making Growing Degree Day column 
 ```{r}
 daymet_all_unnest1 <- daymet_all %>%
   mutate(weather = map(weather, ~ select(.x, -latitude, -longitude))) %>%
@@ -87,10 +87,84 @@ daymet_all_unnest1
 ```
 
 
-#Exporting file for future use.  
+##Exporting file for future use.  
 ```{r}
 write_csv(daymet_all_unnest1,
           "../data/fieldweatherdata.csv")
 ```
 
+#MAKE MERGED SUBMISSION FILE 
+```{r}
+testing_meta <- read_csv("../data/testing/testing_meta.csv")
 
+testing_meta
+```
+
+##Downloading weather data
+```{r}
+testing_meta
+daymet_one_testing <- download_daymet(site = testing_meta$site[1],
+                              lat = testing_meta$latitude[1],
+                              lon = testing_meta$longitude[1],
+                              start = testing_meta$year[1],
+                              end = testing_meta$year[1],
+                              simplify = T,
+                              silent = T
+                              )
+daymet_one_testing
+```
+
+```{r}
+daymet_all_testing <- testing_meta %>%
+  mutate(weather = pmap(list(.y = year,
+                             .site = site,
+                             .lon = longitude,
+                             .lat = latitude),
+                        function(.y, .site, .lat, .lon)
+                          download_daymet(
+                                          site = .site,
+                                          lat = .lat,
+                                          lon = .lon,
+                                          start = .y,
+                                          end = .y,
+                                          simplify = T,
+                                          silent = T) %>%
+                          rename(.year = year,
+                                 .site = site)
+                          
+                        ))
+daymet_all_testing
+```
+
+
+Inspecting weather data for the first site-year. 
+```{r}
+daymet_all_testing$weather[1]
+
+```
+
+
+#Unnesting the weather column and making Growing Degree Day column 
+```{r}
+daymet_all_unnested_testing <- daymet_all_testing %>%
+  mutate(weather = map(weather, ~ select(.x, -latitude, -longitude))) %>%
+  unnest(weather) %>%
+  pivot_wider(
+    names_from = measurement,
+    values_from = value
+  ) %>%
+  janitor::clean_names() %>%
+  mutate(tmax30_deg_c = pmin(tmax_deg_c, 30)) %>% #above 30, temp does not increase GDD
+  mutate(tmin10_deg_c = pmax(tmin_deg_c, 10)) %>%
+  mutate(gdd = round((tmax30_deg_c + tmin10_deg_c)/2) - 10) %>% #round any value above 30 to 30 and calculate growing degree days for corn and round decimals to only 2 places
+  mutate(gdd_rounded = pmax(gdd, 0)) %>%
+  select(-site_2, -year_2)
+
+daymet_all_unnested_testing 
+```
+
+
+#Exporting file for future use.  
+```{r}
+write_csv(daymet_all_unnested_testing,
+          "../data/fieldweatherdata_testing.csv")
