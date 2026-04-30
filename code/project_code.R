@@ -1,3 +1,11 @@
+# shared_lib_path <- "/work/crss8030/instructor_data/shared_R_libs"
+
+#class_packages <- c("tidymodels", "tidyverse", "vip", "ranger", "finetune", "parsnip", "reticulate", "xgboost", "doParallel", "lme4", "here")
+
+#install.packages(class_packages, lib = shared_lib_path)
+
+# .libPaths(c("/work/crss8030/instructor_data/shared_R_libs", .libPaths()))
+
 #install.packages("lightgbm")
 library(tidyverse)
 library(lightgbm)
@@ -15,20 +23,23 @@ library(doParallel)
 library(glmnet)
 library(finetune)
 library(janitor)
+library(xgboost)
+library(lme4)
+library(quarto)
+library(here)
+here::here()
 
-training_metadata <- read_csv("../data/training/training_meta.csv")
+training_metadata <- read_csv(here("data", "training", "training_meta.csv"))
 
-training_soil <- read_csv("../data/training/training_soil.csv")
+training_soil <- read_csv(here("data", "training", "training_soil.csv"))
 
-training_trait <- read_csv("../data/training/training_trait.csv")
+training_trait <- read_csv(here("data", "training", "training_trait.csv"))
 
-testing_submission <- read_csv("../data/testing/testing_submission.csv")
+testing_submission <- read_csv(here("data", "testing", "testing_submission.csv"))
 
-testing_meta <- read_csv("../data/testing/testing_meta.csv")
+testing_meta <- read_csv(here("data", "testing", "testing_meta.csv"))
 
-testing_soil <- read_csv("../data/testing/testing_soil.csv")
-
-
+testing_soil <- read_csv(here("data", "testing", "testing_soil.csv"))
 
 
 training_soil1 <- training_soil %>%
@@ -48,7 +59,8 @@ training_metadata1<- training_metadata %>%
     longitude >= -125 & longitude <= -66.5
   ) ##Removing sites outside US boundaries
 
-write_csv(training_metadata1, "../data/training_metadata1.csv")
+write_csv(training_metadata1,
+          here::here("data", "training", "training_metadata1.csv"))
 
 training_trait1 <- training_trait %>%
   separate(site, 
@@ -100,14 +112,15 @@ training_merged1 <- training_merged %>%
   filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1" ))) %>%
   mutate(id = row_number(), .before = "year") #adding an ID column at the front of the table to identify rows
 
-write_csv(training_merged1,"../data/training_merged1.csv")
+write_csv(training_merged1,
+          here::here("data", "training", "training_merged1.csv"))
 
 #confirm: 
 setdiff(testing_submission$site, training_merged1$site)  # sites in df1 but not df2
 setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not df1
 
 
-fieldweather <- read_csv("../data/fieldweatherdata.csv")
+fieldweather <- read_csv(here("data", "fieldweatherdata.csv"))
 
 fieldweatherdata <- fieldweather %>%
   select(-gdd)
@@ -158,7 +171,8 @@ weather_merged <- training_merged1 %>%
 
 
 weather_merged
-write_csv(weather_merged, "../output/weather_merged.csv")
+write_csv(weather_merged,
+          here::here("output", "weather_merged.csv"))
 
 #Plotting all variables by site
 
@@ -187,14 +201,16 @@ set.seed(76332)
 
 # Splitting the Data for Training
 merged_split <- initial_split(weather_merged, prop = 0.7, strata = yield_mg_ha)
+merged_split
 
 merged_train <- training(merged_split) %>%
   select(-c(date_planted, date_harvested))
+merged_train
 
 merged_test <- testing(merged_split)
+merged_test
 
-
-ggplot() +
+density_plot <- ggplot() +
   geom_density(data = merged_train, 
                aes(x = yield_mg_ha),
                color = "red") +
@@ -202,18 +218,37 @@ ggplot() +
                aes(x = yield_mg_ha),
                color = "blue") 
 
+cat(paste0("Saving...... density plot of train and test data"))
+
+ggsave(plot = density_plot, 
+       path = here("output", "png"),
+       filename = "density_plot_test_train.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
+
 #RECIPE
+
+cat("\nCreate recipe for data preprocessing\n")
+
 merged_recipe <- recipe(yield_mg_ha ~ ., data = merged_train) %>%
   step_novel(all_nominal_predictors()) %>% #renames "new" hybrids as "new" category so that the model does not return an error
   step_unknown(all_nominal_predictors()) %>% #handling NAs in categorical columns
   step_dummy(all_nominal_predictors()) %>%  #make dummy variables on categorical variables like previous crop
   step_impute_median(all_numeric_predictors())#imputing NA values with median
 
+merged_recipe
+
 #DATA PREP
 merged_prep <- merged_recipe %>%
   prep()
 
 merged_prep
+
+# helps to see all the available hyperparameter we can tune for a model
+show_model_info("boost_tree")
+# helps to see all the models that we can run with the package parsnip
+get_from_env("models")
 
 ###setting up xgboost
 
@@ -227,11 +262,21 @@ xgb_spec <-
   set_engine ("xgboost") %>%
   set_mode("regression")
 
+xgb_spec
+
 ### cross-validation
 set.seed(235)
 resampling_foldcv <- vfold_cv(merged_train, v = 10)
 
+# Create leave one year out cv object from the sampling data
+resampling_fold_loyo <- group_vfold_cv(merged_train,
+                                       group = year)
+
+# Create leave one location out cv object from the sampling data
+resampling_fold_loso <- group_vfold_cv(weather_train,
+                                       group = site)
 ###Sampling using Latin-Hypercube
+set.seed(12345)
 xgb_grid <- grid_latin_hypercube(
   tree_depth(),
   min_n(),
@@ -239,23 +284,100 @@ xgb_grid <- grid_latin_hypercube(
   trees(),
   size = 50
 )
+xgb_grid
+
+ggplot(data = xgb_grid,
+       aes(x = tree_depth, 
+           y = min_n)) +
+  geom_point(aes(color = factor(learn_rate),
+                 size = trees),
+             alpha = .5,
+             show.legend = FALSE)
+
 ### Adaptive Grid Search to Identify best model later
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_NODE"))
+
+if (is.na(n_cores)) n_cores <- parallel::detectCores() - 1
+
+# Start the Cluster
+cl <- makePSOCKcluster(n_cores)
+
+registerDoParallel(cl)
+
+cat(paste0("\nFound and registered ", n_cores, " cores to work with\n"))
+
 set.seed(76544)
-registerDoParallel(cores = parallel::detectCores() - 1) 
-xgb_res <- tune_race_anova(object = xgb_spec,
-                      preprocessor = merged_recipe,
-                      resamples = resampling_foldcv,
-                      grid = xgb_grid,
-                      control = control_race(save_pred = TRUE))
 
-stopImplicitCluster()
+# Create the list of CV techniques so we can loop through them
+cv_list <- list(
+  vfold = resampling_foldcv,
+  year = resampling_fold_loyo,
+  site = resampling_fold_loso
+)
 
-plot_race(xgb_res)
+# Create a empty list to store the results from the loop
+results <- list()
+
+# Create our loop
+for (i in seq_along(cv_list)) {
+  name <- names(cv_list)[i]
+  results[[name]] <- tune_race_anova(object = xgb_spec,
+                                     preprocessor = merged_recipe,
+                                     resamples = cv_list[[i]],
+                                     grid = xgb_grid,
+                                     control = control_race(save_pred = TRUE,
+                                                            parallel_over = "everything"))
+}
+
+stopCluster(cl)
+
+
+# Create a dataframe structure from the list obtained after running the loop
+results_df <- tibble(method = names(results),
+                     diff_cv = results) %>%  
+  # Collect the metrices for each CV techniques using map function
+  mutate (metrices = map2(diff_cv, method,
+                          ~.x %>% 
+                            collect_metrics() %>%
+                            mutate(method = .y, .before = "trees")))
+results_df$metrices[[1]]
+
+# bind all the metrices together so to select the best performing one
+all_metrices <- do.call(bind_rows, results_df$metrices)
+
+
+# Automating to pull the best method out of 3 we ran
+best_method <- all_metrices %>%
+  filter(.metric == "rmse") %>%
+  slice_min(mean, n = 1) %>%
+  pull(method)
+
+# Getting the metrice (hyperparameter values of the best performing CV)
+best_cv_object <- results_df %>%
+  filter(method == best_method) %>%
+  pull(diff_cv) %>% 
+  first()
+  
+
+### Select the best model based on Race Results (highest rmse)
+best_rmse_xgb <- best_cv_object %>%
+  select_best(metric = "rmse") %>%
+  mutate(source = "best_rmse")
+best_rmse_xgb
+
 
 ### Select the best model based on Race Results (highest r2)
-best_r2_xgb <- xgb_res %>%
-  select_best(metric = "rsq") %>%
+best_r2_xgb <- best_cv_object %>%
+  select_best(metric = "rmse") %>%
   mutate(source = "best_r2")
+best_r2_xgb
+
+
+## Compare and Finalize Model
+best_rmse_xgb %>% 
+  bind_rows(best_rmse_xgb, 
+            best_r2_xgb) %>%
+  dplyr::select(source, everything())
 
 ###Final Specification
 final_spec_xgb <- boost_tree(
@@ -267,6 +389,8 @@ final_spec_xgb <- boost_tree(
   set_engine("xgboost") %>%
   set_mode("regression")
 
+final_spec_xgb
+
 ###Validation
 set.seed(10)
 final_fit_xgb <- last_fit(final_spec_xgb,
@@ -275,48 +399,45 @@ final_fit_xgb <- last_fit(final_spec_xgb,
 final_fit_xgb %>%
   collect_predictions() #provides predictions on the test set
 final_fit_xgb %>%
-  collect_metrics() #gives the rmse and r2 on the test set
+  collect_metrics() %>% #gives the rmse and r2 on the test set
+  mutate(estimate = round(.estimate, 3))
 
-lgbm_spec <- boost_tree(
-  trees = tune(),
-  tree_depth = tune(),
-  learn_rate = tune(),
-  loss_reduction = tune(),
-  min_n = tune(),
-  sample_size = tune()
-) %>%
-  set_engine("lightgbm") %>%
+###setting up xgboost
+
+lgbm_spec <- 
+  boost_tree(
+    trees = tune(),
+    tree_depth = tune(),
+    min_n = tune(),
+    learn_rate = tune()
+    ) %>%
+  set_engine ("lightgbm") %>%
   set_mode("regression")
+
 lgbm_spec
 
+### cross-validation
+set.seed(1235)
+resampling_foldcv <- vfold_cv(merged_train, v = 10)
 
-#creating workflow
-wf <- workflow() %>%
-  add_recipe(rec) %>%
-  add_model(lgbm_model)
+# Create leave one year out cv object from the sampling data
+resampling_fold_loyo <- group_vfold_cv(merged_train,
+                                       group = year)
 
-set.seed(235) 
-resampling_foldcv <- vfold_cv(merged_train, # Create 10-fold cross-validation resampling object from training data
-                              v = 10)
-
-resampling_foldcv
-resampling_foldcv$splits[[1]]
-
-
-#Hyperparameter grid with Latin Hypercube Sampling
+# Create leave one location out cv object from the sampling data
+resampling_fold_loso <- group_vfold_cv(weather_train,
+                                       group = site)
+###Sampling using Latin-Hypercube
+set.seed(123456)
 lgbm_grid <- grid_latin_hypercube(
-  tree_depth(), 
+  tree_depth(),
   min_n(),
   learn_rate(),
-  loss_reduction(),
   trees(),
-  sample_prop(),
-  size = 100
+  size = 50
 )
-
 lgbm_grid
 
-#plot
 ggplot(data = lgbm_grid,
        aes(x = tree_depth, 
            y = min_n)) +
@@ -325,80 +446,113 @@ ggplot(data = lgbm_grid,
              alpha = .5,
              show.legend = FALSE)
 
-set.seed(76544)
-registerDoParallel(cores = parallel::detectCores() -1)
-lgbm_res <- tune_race_anova(object = lgbm_spec,
-                      preprocessor = merged_recipe,
-                      resamples = resampling_foldcv,
-                      grid = lgbm_grid,
-                      control = control_race(save_pred = TRUE))
-stopImplicitCluster()
+### Adaptive Grid Search to Identify best model later
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_NODE"))
+
+if (is.na(n_cores)) n_cores <- parallel::detectCores() - 1
+
+# Start the Cluster
+cl <- makePSOCKcluster(n_cores)
+
+registerDoParallel(cl)
+
+cat(paste0("\nFound and registered ", n_cores, " cores to work with\n"))
+
+set.seed(176544)
+
+# Create the list of CV techniques so we can loop through them
+cv_list1 <- list(
+  vfold = resampling_foldcv,
+  year = resampling_fold_loyo,
+  site = resampling_fold_loso
+)
+
+# Create a empty list to store the results from the loop
+results1 <- list()
+
+# Create our loop
+for (i in seq_along(cv_list)) {
+  name <- names(cv_list)[i]
+  results1[[name]] <- tune_race_anova(object = lgbm_spec,
+                                     preprocessor = merged_recipe,
+                                     resamples = cv_list1[[i]],
+                                     grid = lgbm_grid,
+                                     control = control_race(save_pred = TRUE,
+                                                            parallel_over = "everything"))
+}
+
+stopCluster(cl)
 
 
-beepr::beep()
-lgbm_res$.metrics[[2]]
+# Create a dataframe structure from the list obtained after running the loop
+results_df1 <- tibble(method = names(results1),
+                     diff_cv = results1) %>%  
+  # Collect the metrices for each CV techniques using map function
+  mutate (metrices = map2(diff_cv, method,
+                          ~.x %>% 
+                            collect_metrics() %>%
+                            mutate(method = .y, .before = "trees")))
+results_df1$metrices[[1]]
 
-#Select Best Models based on lowest RMSE
-best_rmse_lgbm <- lgbm_res %>% 
-  select_best(metric = "rmse")%>% 
+# bind all the metrices together so to select the best performing one
+all_metrices1 <- do.call(bind_rows, results_df1$metrices)
+
+
+# Automating to pull the best method out of 3 we ran
+best_method1 <- all_metrices1 %>%
+  filter(.metric == "rmse") %>%
+  slice_min(mean, n = 1) %>%
+  pull(method)
+
+# Getting the metrice (hyperparameter values of the best performing CV)
+best_cv_object1 <- results_df1 %>%
+  filter(method == best_method1) %>%
+  pull(diff_cv) %>% 
+  first()
+  
+
+### Select the best model based on Race Results (highest rmse)
+best_rmse_lgbm <- best_cv_object1 %>%
+  select_best(metric = "rmse") %>%
   mutate(source = "best_rmse")
-
 best_rmse_lgbm
 
-#Select Best Models based on lowers RMSE within 1% loss
-best_rmse_pct_loss_lgbm <- lgbm_res %>% 
-  select_by_pct_loss("min_n",
-                     metric = "rmse",
-                     limit = 1
-                     )%>% 
-  mutate(source = "best_rmse_pct_loss")
 
-best_rmse_pct_loss_lgbm
-
-# Based on lowest RMSE within 1 se
-best_rmse_one_std_err_lgbm <- lgbm_res %>% 
-  select_by_one_std_err(metric = "rmse",
-                        eval_time = 100,
-                        trees
-                        )%>% 
-  mutate(source = "best_rmse_one_std_err")
-
-best_rmse_one_std_err_lgbm
-
-# Based on greatest R2
-best_r2_lgbm <- lgbm_res %>% 
-  select_best(metric = "rsq")%>% 
+### Select the best model based on Race Results (highest r2)
+best_r2_lgbm <- best_cv_object1 %>%
+  select_best(metric = "rmse") %>%
   mutate(source = "best_r2")
-
 best_r2_lgbm
 
-# Based on lowers R2 within 1% loss
-best_r2_pct_loss_lgbm <- lgbm_res %>% 
-  select_by_pct_loss("min_n",
-                     metric = "rsq",
-                     limit = 1
-                     ) %>% 
-  mutate(source = "best_r2_pct_loss")
 
-best_r2_pct_loss_lgbm
+## Compare and Finalize Model
+best_rmse_lgbm %>% 
+  bind_rows(best_rmse_lgbm, 
+            best_r2_lgbm) %>%
+  dplyr::select(source, everything())
 
-# Based on lowest R2 within 1 se
-best_r2_one_std_error_lgbm <- lgbm_res %>% 
-  select_by_one_std_err(metric = "rsq",
-                        eval_time = 100,
-                        trees
-                        ) %>%
-  mutate(source = "best_r2_one_std_error")
+###Final Specification
+final_spec_lgbm <- boost_tree(
+  trees = best_r2_lgbm$trees,
+  tree_depth = best_r2_lgbm$tree_depth,
+  min_n = best_r2_lgbm$min_n,
+  learn_rate = best_r2_lgbm$learn_rate
+) %>%
+  set_engine("lightgbm") %>%
+  set_mode("regression")
 
-best_r2_one_std_error_lgbm
+final_spec_lgbm
 
-rmse_r2_lgbm <- best_rmse_lgbm %>% 
-  bind_rows(best_rmse_pct_loss_lgbm, 
-            best_rmse_one_std_err_lgbm, 
-            best_r2_lgbm, 
-            best_r2_pct_loss_lgbm, 
-            best_r2_one_std_error_lgbm)
-write.csv(rmse_r2_lgbm, "../output/lgbm_metrics.csv", row.names = FALSE)
+###Validation
+set.seed(1000)
+final_fit_lgbm <- last_fit(final_spec_lgbm,
+                merged_recipe,
+                split = merged_split)
+final_fit_lgbm %>%
+  collect_predictions() #provides predictions on the test set
+final_fit_lgbm %>%
+  collect_metrics() %>% #gives the rmse and r2 on the test set
+  mutate(estimate = round(.estimate, 3))
 
 final_spec_lgbm <- boost_tree(
   trees = best_r2_lgbm$trees,           # Number of boosting rounds (trees)
@@ -441,7 +595,7 @@ final_spec_lgbm %>%
                           merged_train)) %>% 
   rsq(yield_mg_ha, .pred))
 
-final_fit_xgb %>%
+Publication_ready_xgb <- final_fit_xgb %>%
   collect_predictions() %>%
   ggplot(aes(x = yield_mg_ha,
              y = .pred)) +
@@ -451,7 +605,14 @@ final_fit_xgb %>%
   scale_x_continuous(limits = c(20, 40)) +
   scale_y_continuous(limits = c(20, 40)) 
 
-final_fit_lgbm %>%
+ggsave(plot = publication_ready_xgb, 
+       path = here("output", "png"),
+       filename = "model_perf_test_data.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
+
+Publication_ready_lgbm <- final_fit_lgbm %>%
   collect_predictions() %>%
   ggplot(aes(x = yield_mg_ha,
              y = .pred)) +
@@ -461,24 +622,15 @@ final_fit_lgbm %>%
   scale_x_continuous(limits = c(20, 40)) +
   scale_y_continuous(limits = c(20, 40))
 
+ggsave(plot = publication_ready_lgbm, 
+       path = here("output", "png"),
+       filename = "model_perf_test_data.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
+
 #XGBoost
-final_spec_xgb %>%
-  fit(yield_mg_ha ~ .,
-         data = bake(merged_prep, merged_train)) %>% #There little change in variable improtance if you use full dataset
-    vi() %>%
-  mutate(
-    Variable = fct_reorder(Variable, 
-                           Importance)
-  ) %>%
-  ggplot(aes(x = Importance, 
-             y = Variable)) +
-  geom_col() +
-  scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL)
-
-
-#LightGBM
-final_spec_lgbm %>%
+vip_xgb <- final_spec_xgb %>%
   fit(yield_mg_ha ~ .,
          data = bake(merged_prep, merged_train)) %>% 
     vi() %>%
@@ -490,7 +642,45 @@ final_spec_lgbm %>%
              y = Variable)) +
   geom_col() +
   scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL)
+  labs(y = NULL) +
+  theme(panel.background  = element_rect(fill = "gray82"),
+        panel.grid = element_blank())
+
+cat(paste0("\nSaving...... publication ready plot for variable importance\n"))
+
+ggsave(plot = vip_xgb, 
+       path = here("output/png"),
+       filename = "vip_xgb_test_data.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
+
+
+#LightGBM
+vip_lgbm <- final_spec_lgbm %>%
+  fit(yield_mg_ha ~ .,
+         data = bake(merged_prep, merged_train)) %>% 
+    vi() %>%
+  mutate(
+    Variable = fct_reorder(Variable, 
+                           Importance)
+  ) %>%
+  ggplot(aes(x = Importance, 
+             y = Variable)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL) +
+  theme(panel.background  = element_rect(fill = "gray82"),
+        panel.grid = element_blank())
+
+cat(paste0("\nSaving...... publication ready plot for variable importance\n"))
+
+ggsave(plot = vip_lgbm, 
+       path = here("output/png"),
+       filename = "vip_lgbm_test_data.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
 
 #Make a table of the RMSE and R2 Values to compare directly
 
@@ -501,9 +691,12 @@ metrics_lgbm <- final_fit_lgbm %>%
   collect_metrics()
 
 
-write.csv(metrics_xgb, "../output/xgb_metrics.csv", row.names = FALSE)
+write_csv(metrics_xgb,
+          here::here("output", "xgb_metrics.csv"))
 
-write.csv(metrics_lgbm, "../output/lgbm_metrics.csv", row.names = FALSE)
+write_csv(metrics_xgb,
+          here::here("output", "lgbm_metrics.csv"))
+
 
 metrics_xgb <- final_fit_xgb %>%
   collect_metrics() %>%
@@ -521,8 +714,9 @@ comparison_table <- all_metrics %>%
 
 comparison_table
 
-write.csv(comparison_table,
-          "../output/model_comparison_metrics.csv", row.names = FALSE)
+write_csv(comparison_table,
+          here::here("output", "model_comparison_metrics.csv"))
+
 
 #Wrangling testing soil to separate year from site in the site column before merging for prediction
 testing_soil1 <- testing_soil %>%
@@ -569,8 +763,7 @@ merged_submission_final <- merged_submission %>%
   ) %>% 
   dplyr::select(year, site, hybrid, yield_mg_ha)
 
-write.csv(merged_submission_final,
-          "../output/testing_submission.csv",
-          row.names = FALSE)
+write_csv(merged_submission_final,
+          here::here("output", "testing_submission.csv"))
 
-#knitr::purl("project_code.qmd", output = "project_code.R", documentation = 0)
+knitr::purl("project_code.qmd", output = "project_code.R", documentation = 0)
