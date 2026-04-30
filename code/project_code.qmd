@@ -138,6 +138,7 @@ setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not 
 
 ```
 
+#! Import Daymet Data From DayMet_Extraction.qmd
 ```{r, warning = False, message = False}
 fieldweather <- read_csv("../data/fieldweatherdata.csv")
 
@@ -518,33 +519,10 @@ final_fit_lgbm %>%
 ```
 
 
-#Evaluate on Training Set
-
-```{r}
-final_spec_lgbm %>%
-  fit(yield_mg_ha ~ .,
-      data = bake(merged_prep, 
-                  merged_train)) %>%
-  augment(new_data = bake(merged_prep, 
-                          merged_train)) %>% 
-  rmse(yield_mg_ha, .pred) %>%
-  bind_rows(
-    
-    
-# R2
-final_spec_lgbm %>%
-  fit(yield_mg_ha ~ .,
-      data = bake(merged_prep, 
-                  merged_train)) %>%
-  augment(new_data = bake(merged_prep, 
-                          merged_train)) %>% 
-  rsq(yield_mg_ha, .pred))
-```
-
 #14: Comparing Predicted vs Observed Plots
 
 ```{r}
-final_fit_xgb %>%
+xgb_pred_vs_obs <- final_fit_xgb %>%
   collect_predictions() %>%
   ggplot(aes(x = yield_mg_ha,
              y = .pred)) +
@@ -553,10 +531,18 @@ final_fit_xgb %>%
   geom_smooth(method = "lm") +
   scale_x_continuous(limits = c(20, 40)) +
   scale_y_continuous(limits = c(20, 40)) 
+
+ggsave(
+  filename = "../output/xgb_pred_vs_obs.png",
+  plot = xgb_pred_vs_obs,
+  width = 6,
+  height = 6,
+  dpi = 300
+)
 ```
 
 ```{r}
-final_fit_lgbm %>%
+lbgm_pred_vs_obs <- final_fit_lgbm %>%
   collect_predictions() %>%
   ggplot(aes(x = yield_mg_ha,
              y = .pred)) +
@@ -565,6 +551,14 @@ final_fit_lgbm %>%
   geom_smooth(method = "lm") +
   scale_x_continuous(limits = c(20, 40)) +
   scale_y_continuous(limits = c(20, 40))
+
+ggsave(
+  filename = "../output/lgbm_pred_vs_obs.png",
+  plot = lgbm_pred_vs_obs,
+  width = 6,
+  height = 6,
+  dpi = 300
+)
 ```
 
 
