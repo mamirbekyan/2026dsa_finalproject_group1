@@ -344,7 +344,7 @@ resampling_fold_loyo <- group_vfold_cv(merged_train,
                                        group = year)
 
 # Create leave one location out cv object from the sampling data
-resampling_fold_loso <- group_vfold_cv(weather_train,
+resampling_fold_loso <- group_vfold_cv(merged_train,
                                        group = site)
 ###Sampling using Latin-Hypercube
 set.seed(12345)
@@ -900,5 +900,5 @@ write_csv(merged_submission_final,
 
 
 ```{r}
-knitr::purl("project_code_teach.qmd", output = "project_code_teach1.R", documentation = 0)
+#knitr::purl("project_code_teach.qmd", output = "project_code_teach1.R", documentation = 0)
 ```
