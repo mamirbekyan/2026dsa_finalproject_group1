@@ -160,7 +160,7 @@ fieldweatherdata %>%
 
 ## DENSITY PLOT FOR DISTRIBUTION OF YIELD
 
-yield_density_all_years <- fieldweatherdata %>%
+yield_density_all_years <- training_merged1 %>%
   ggplot(aes(x = yield_mg_ha)) +
   geom_density() +
   labs(
@@ -232,13 +232,15 @@ allplots <- weather_merged %>%
   labs(x= .y,
        y = "site")))
   
-ggsave(
-  plot = all_plots,
-  filename = here ("teach_output", "png", "all_plots.png"),
-  height = 6,
-  width = 9,
-  dpi = 150
-) 
+walk2(allplots$plot, 
+      allplots$name, 
+      ~ ggsave( 
+        filename = here("teach_output", "png", 
+                        paste0(.y, ".png")), 
+        plot = .x, 
+        height = 6, 
+        width = 9, 
+        dpi = 150 ) )
 
 set.seed(76332)
 
