@@ -143,11 +143,11 @@ distributions_usa <- ggplot() +
 
 ggsave(
   plot = distributions_usa,
-  filename = here ("teach_output", "png", "distributions_usa.png"),
-  height = 6,
-  width = 9,
+  filename = "../Group_1_Shiny_App/www/distributions_usa.png")
+  height = 6
+  width = 9
   dpi = 150
-)
+
 #Making a map to identify the site distributions. PR, AK, HI were removed since they did not have sites. Points exist in the Mediterranean between Corsica and Italy, i.e. Site NEH2 (which exists in the final testing_submission file).
 ```
 
