@@ -163,16 +163,22 @@ setdiff(training_merged$site, testing_submission$site)  # sites in df2 but not d
 #Drop sites from training_merged that to not need to be predicted to complete testing_submission. ONH1 and 2 are in proximity to one another, however to not appear in the testing_submission dataframe. ONH3 (a new site) appears in testing_submission. Potential to predict ONH3 based on ONH1 and ONH2, so will not remove them.
 
 training_merged1 <- training_merged %>%
-  filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1" ))) %>%
+  filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1", "ONH1", "ONH2" ))) %>%
   mutate(id = row_number(), .before = "year") #adding an ID column at the front of the table to identify rows
 
 write_csv(training_merged1,
           here::here("data", "training", "training_merged1.csv"))
 
+testing_submission1 <- testing_submission %>%
+  filter(!(site %in% c("ONH3")))
+  
+write_csv(training_merged1,
+          here::here("data", "testing", "testing_submission1.csv"))
 #confirm: 
-setdiff(testing_submission$site, training_merged1$site)  # sites in df1 but not df2
-setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not df1
+setdiff(testing_submission1$site, training_merged1$site)  # sites in df1 but not df2
+setdiff(training_merged1$site, testing_submission1$site)  # sites in df2 but not df1
 
+#both have 0 differences in site now
 ```
 
 ```{r, warning = False, message = False}
@@ -393,7 +399,7 @@ xgb_grid <- grid_latin_hypercube(
   min_n(),
   learn_rate(),
   trees(),
-  size = 25
+  size = 20
 )
 xgb_grid
 
@@ -461,7 +467,7 @@ final_spec_xgb <- boost_tree(
 final_spec_xgb
 ```
 
-##. Final Fit and Predictions
+##c. Final Fit
 ```{r, warning=FALSE}
 ###Validation
 set.seed(10)
@@ -476,6 +482,7 @@ final_fit_xgb %>%
 ```
 
 #13. LightGBM
+##a. Setting Up
 ```{r, lgbm_spec}
 ###setting up LightGBM
 
@@ -505,7 +512,7 @@ lgbm_latin_hyper_plot <- grid_latin_hypercube(
   min_n(),
   learn_rate(),
   trees(),
-  size = 25
+  size = 20
 )
 
 
@@ -571,7 +578,7 @@ final_spec_lgbm <- boost_tree(
 final_spec_lgbm
 ```
 
-##. Final Fit and Predictions
+##c. Final Fit
 ```{r, warning=FALSE}
 ###Validation
 set.seed(10)
@@ -764,6 +771,8 @@ write_csv(comparison_table,
 
 ```
 
+#17. Wrangling for testing prediction
+#a. For GDD: Getting Average Growing Season
 ```{r}
 #creating an average for the growing window so that we can clculate GDD based on this range later. Created then renamed to the same column name as training_merged1 for consistency
 average_growing_window_testing_submission <- training_merged1 %>%
@@ -780,7 +789,6 @@ average_growing_window_testing_submission
 ```
 
 
-#17. Wrangling for testing prediction
 ```{r}
 #Wrangling testing soil to separate year from site in the site column before merging for prediction
 testing_soil1 <- testing_soil %>%
@@ -789,7 +797,7 @@ testing_soil1 <- testing_soil %>%
   select(!(x)) %>%
   unique()
 
-merged_submission <- testing_submission %>%
+merged_submission <- testing_submission1 %>%
   left_join(testing_soil1, by = c("site", "year")) %>%
   left_join(testing_meta, by = c("site", "year")) 
 
@@ -807,24 +815,24 @@ merged_submission_final <- merged_submission %>%
   )
 
 
-fieldweatherdata_submission1 <- fieldweatherdata_submission %>%
+fieldweather_submission1 <- fieldweather_submission %>%
   # Selecting needed variables
   dplyr::select(-tile, -altitude, -previous_crop, -longitude, -latitude) %>%
 # Creating a date class variable  
   mutate(date_chr = paste0(year, "/", yday)) %>%
   mutate(date = as.Date(date_chr, "%Y/%j"))
+```
 
 
-
-
+```{r}
 weather_features_submission1 <- merged_submission_final %>%
-  select(site, year, day_of_year_planted, day_of_year_harvested) %>%
+  select(site, year, date_planted, date_harvested) %>%
   distinct() %>%
   mutate(
-    date_planted   = ymd(paste0(year, "-01-01")) + days(day_of_year_planted - 1),
-    date_harvested = ymd(paste0(year, "-01-01")) + days(day_of_year_harvested - 1)
+    date_planted   = ymd(paste0(year, "-01-01")) + days(date_planted - 1),
+    date_harvested = ymd(paste0(year, "-01-01")) + days(date_harvested - 1)
   ) %>%
-  left_join(fieldweatherdata_submission1, by = c("site", "year")) %>%
+  left_join(fieldweather_submission1, by = c("site", "year")) %>%
   filter(date >= date_planted,
          date <= date_harvested) %>%
   group_by(site, year, date_planted, date_harvested) %>%
