@@ -158,24 +158,6 @@ fieldweatherdata %>%
   facet_wrap(~name, scales = "free")
 
 
-## DENSITY PLOT FOR DISTRIBUTION OF YIELD
-
-yield_density_all_years <- fieldweatherdata %>%
-  ggplot(aes(x = yield_mg_ha)) +
-  geom_density() +
-  labs(
-    title = "Density of Yield Across All Years",
-    x = "Yield (mg/ha)",
-    y = "Density")
- 
-ggsave(
-  plot = yeild_density_all_years,
-  filename = here ("teach_output", "png", "yield_density_all_years.png"),
-  height = 6,
-  width = 9,
-  dpi = 150
-)
-
 fieldweather1 <- fieldweatherdata %>%
   # Selecting needed variables
   dplyr::select(-tile, -altitude) %>%
@@ -232,13 +214,6 @@ allplots <- weather_merged %>%
   labs(x= .y,
        y = "site")))
   
-ggsave(
-  plot = all_plots,
-  filename = here ("teach_output", "png", "all_plots.png"),
-  height = 6,
-  width = 9,
-  dpi = 150
-) 
 
 set.seed(76332)
 
