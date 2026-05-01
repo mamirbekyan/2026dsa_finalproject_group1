@@ -71,6 +71,9 @@ testing_submission <- read_csv(here("data", "testing", "testing_submission.csv")
 testing_meta <- read_csv(here("data", "testing", "testing_meta.csv"))
 
 testing_soil <- read_csv(here("data", "testing", "testing_soil.csv"))
+
+fieldweather_submission <- read_csv(here("data", "fieldweatherdata_testing.csv"))
+
 ```
 
 
@@ -118,8 +121,8 @@ training_trait1 <- training_trait %>%
 ```{r, warning = False, message = False}
 training_merged <- training_trait1 %>%
   left_join(training_soil1, by = c("site", "year")) %>%
-  left_join(training_metadata1, by = c("site", "year"))
-
+  left_join(training_metadata1, by = c("site", "year"))%>%
+  select(-replicate, -block)
 ```
 
 #5. Mapping Sites
@@ -198,7 +201,7 @@ fieldweatherdata %>%
 ```{r}
 ############### DENSITY PLOT FOR DISTRIBUTION OF YIELD
 
-yeild_density_all_years <- fieldweatherdata %>%
+yield_density_all_years <- fieldweatherdata %>%
   ggplot(aes(x = yield_mg_ha)) +
   geom_density() +
   labs(
@@ -208,7 +211,7 @@ yeild_density_all_years <- fieldweatherdata %>%
  
 ggsave(
   plot = yeild_density_all_years,
-  filename = here ("teach_output", "png", "yeild_density_all_years.png"),
+  filename = here ("teach_output", "png", "yield_density_all_years.png"),
   height = 6,
   width = 9,
   dpi = 150
@@ -764,15 +767,20 @@ write_csv(comparison_table,
 ```{r}
 #creating an average for the growing window so that we can clculate GDD based on this range later. Created then renamed to the same column name as training_merged1 for consistency
 average_growing_window_testing_submission <- training_merged1 %>%
-  group_by(site, hybrid) %>%
+  group_by(year, site, hybrid) %>%
   summarise(
-    day_of_year_planted = round(mean(day_of_year_planted,na.rm = TRUE)),                          day_of_year_harvested = round(mean(day_of_year_harvested,na.rm = TRUE)))
-  
-                    
+    day_of_year_planted = round(mean(day_of_year_planted,na.rm = TRUE)),                          day_of_year_harvested = round(mean(day_of_year_harvested,na.rm = TRUE)), .groups = "drop")%>%
+  mutate(
+    date_planted   = ymd(paste0(year, "-01-01")) + days(day_of_year_planted - 1),
+    date_harvested = ymd(paste0(year, "-01-01")) + days(day_of_year_harvested - 1)
+  ) %>%
+  select(-year)
+
+average_growing_window_testing_submission
 ```
 
 
-#17. Predicting Testing_Submission
+#17. Wrangling for testing prediction
 ```{r}
 #Wrangling testing soil to separate year from site in the site column before merging for prediction
 testing_soil1 <- testing_soil %>%
@@ -784,8 +792,61 @@ testing_soil1 <- testing_soil %>%
 merged_submission <- testing_submission %>%
   left_join(testing_soil1, by = c("site", "year")) %>%
   left_join(testing_meta, by = c("site", "year")) 
-view(merged_submission)
 
+
+merged_submission_final <- merged_submission %>%
+  left_join(
+    average_growing_window_testing_submission %>%
+      select(site, hybrid, date_planted, date_harvested),
+    by = c("site", "hybrid")
+  ) %>%
+  select(-longitude, -latitude, -previous_crop) %>%
+  mutate(
+    date_planted   = as.Date(date_planted),
+    date_harvested = as.Date(date_harvested)
+  )
+
+
+fieldweatherdata_submission1 <- fieldweatherdata_submission %>%
+  # Selecting needed variables
+  dplyr::select(-tile, -altitude, -previous_crop, -longitude, -latitude) %>%
+# Creating a date class variable  
+  mutate(date_chr = paste0(year, "/", yday)) %>%
+  mutate(date = as.Date(date_chr, "%Y/%j"))
+
+
+
+
+weather_features_submission1 <- merged_submission_final %>%
+  select(site, year, day_of_year_planted, day_of_year_harvested) %>%  # 👈 use DOY instead
+  distinct() %>%
+  mutate(
+    date_planted   = ymd(paste0(year, "-01-01")) + days(day_of_year_planted - 1),
+    date_harvested = ymd(paste0(year, "-01-01")) + days(day_of_year_harvested - 1)
+  ) %>%
+  left_join(fieldweatherdata_submission1, by = c("site", "year")) %>%
+  filter(date >= date_planted,
+         date <= date_harvested) %>%
+  group_by(site, year, date_planted, date_harvested) %>%
+  summarise(
+    n_days = n(),
+    sum_gdd = sum(gdd_rounded, na.rm = TRUE),
+    across(
+      c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
+      mean, na.rm = TRUE,
+      .names = "mean_{.col}"
+    ),
+    sum_precip = sum(prcp_mm_day, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+write_csv(weather_merged_submission,
+          here::here("data", "weather_merged_submission.csv"))
+```
+
+
+##Predicting testing_submission
+```{r}
 #selecting model with best r2
 comparison <- all_metrics %>%
   dplyr::filter(.metric == "rmse")
