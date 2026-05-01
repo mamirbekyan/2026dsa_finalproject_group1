@@ -280,7 +280,7 @@ xgb_spec
 
 ### cross-validation
 set.seed(235)
-resampling_foldcv <- vfold_cv(merged_train, v = 4)
+resampling_foldcv <- vfold_cv(merged_train, v = 3)
 
 ### These are removed below because the computational speed is heavily compromised. However, it would improve accuracy if left in. 
 
@@ -392,7 +392,7 @@ lgbm_spec
 
 ### cross-validation
 set.seed(1235)
-resampling_foldcv_lgbm <- vfold_cv(merged_train, v = 4)
+resampling_foldcv_lgbm <- vfold_cv(merged_train, v = 3)
 
 ###Sampling using Latin-Hypercube
 set.seed(123456)

@@ -1,0 +1,3 @@
+.estimator,.config,model,rmse,rsq
+standard,pre0_mod0_post0,xgboost,1.9013319647239286,0.5897737317119418
+standard,pre0_mod0_post0,lightgbm,1.8880725063826043,0.5948453735615334

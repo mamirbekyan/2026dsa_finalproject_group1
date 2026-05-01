@@ -8,23 +8,10 @@ format:
 author: Group 1 (Mari, Oluwatomide)
 ---
 
-```{r}
-# shared_lib_path <- "/work/crss8030/instructor_data/shared_R_libs"
-
-#class_packages <- c("tidymodels", "tidyverse", "vip", "ranger", "finetune", "parsnip", "reticulate", "xgboost", "doParallel", "lme4", "here")
-
-#install.packages(class_packages, lib = shared_lib_path)
-```
-
-# Locate the installed libraries (important step while running the script in cluster - sapelo2)
-
-
 #1. Loading Library
 ##a. Libraries
 ```{r, warning = False, message = False}
 #install.packages("lightgbm")
-# .libPaths(c("/work/crss8030/instructor_data/shared_R_libs", .libPaths()))
-
 library(tidyverse)
 library(lightgbm)
 library(xgboost)
@@ -204,26 +191,6 @@ fieldweatherdata %>%
 
 ```
 
-```{r}
-## DENSITY PLOT FOR DISTRIBUTION OF YIELD
-
-yield_density_all_years <- fieldweatherdata %>%
-  ggplot(aes(x = yield_mg_ha)) +
-  geom_density() +
-  labs(
-    title = "Density of Yield Across All Years",
-    x = "Yield (mg/ha)",
-    y = "Density")
- 
-ggsave(
-  plot = yeild_density_all_years,
-  filename = here ("teach_output", "png", "yield_density_all_years.png"),
-  height = 6,
-  width = 9,
-  dpi = 150
-)
-```
-
 
 ```{r}
 fieldweather1 <- fieldweatherdata %>%
@@ -260,7 +227,7 @@ weather_merged <- training_merged1 %>%
   filter(year != 2014) %>%
   left_join(weather_features,
             by = c("site", "year", "date_planted", "date_harvested")) %>%
-  select(-id, replicate, block)
+  select(-id)
 
 
 write_csv(weather_merged,
@@ -288,13 +255,6 @@ allplots <- weather_merged %>%
   labs(x= .y,
        y = "site")))
   
-ggsave(
-  plot = all_plots,
-  filename = here ("teach_output", "png", "all_plots.png"),
-  height = 6,
-  width = 9,
-  dpi = 150
-) 
 ```
 
 
@@ -437,15 +397,13 @@ cat(paste0("\nFound and registered ", n_cores, " cores to work with\n"))
 set.seed(76544)
 
 #Direct tune using the only resampling method defined above (vfold, resampling_foldcv)
-results_xgb <- tune_race_anova(
+
+results_xgb <- tune_grid(
   object = xgb_spec,
   preprocessor = merged_recipe,
   resamples = resampling_foldcv,
-  grid = xgb_grid,
-  control = control_race(save_pred = TRUE,
-    parallel_over = "everything"))
-
-stopCluster(cl)
+  grid = xgb_grid
+)
 
 #Getting the RMSE and r2 from that resampling method
 best_rmse_xgb <- results_xgb %>%
@@ -546,17 +504,15 @@ cat(paste0("\nFound and registered ", n_cores, " cores to work with\n"))
 
 ```{r}
 set.seed(76544)
-
+#install.packages("bonsai")
+library(bonsai)
 #Direct tune using the only resampling method defined above (vfold, resampling_foldcv)
-results_lgbm <- tune_race_anova(
+results_lgbm <- tune_grid(
   object = lgbm_spec,
   preprocessor = merged_recipe,
-  resamples = resampling_foldcv_lgbm,
-  grid = lgbm_grid,
-  control = control_race(save_pred = TRUE,
-    parallel_over = "everything"))
-
-stopCluster(cl)
+  resamples = resampling_foldcv,
+  grid = lgbm_latin_hyper_plot
+)
 
 #Getting the RMSE and r2 from that resampling method
 best_rmse_lgbm <- results_lgbm %>%
@@ -832,16 +788,22 @@ weather_features_submission1 <- merged_submission_final1 %>%
   distinct(site, year, date_planted, date_harvested) %>%
   
   left_join(fieldweather_submission1, by = c("site", "year")) %>%
+  
   filter(date >= date_planted,
          date <= date_harvested) %>%
+  
   group_by(site, year, date_planted, date_harvested) %>%
+  
   summarise(
     n_days = n(),
     sum_gdd = sum(gdd_rounded, na.rm = TRUE),
+    
     across(
       c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
-      mean, na.rm = TRUE
+      ~ mean(.x, na.rm = TRUE),
+      .names = "mean_{.col}"   # 🔥 THIS is what you need
     ),
+    
     sum_precip = sum(prcp_mm_day, na.rm = TRUE),
     .groups = "drop"
   )
@@ -877,11 +839,11 @@ best_workflow <- best_fit %>%
   extract_workflow()
 
 # predicting the yield for all rows
-pred_yield <- predict(best_workflow, merged_submission) %>%
+pred_yield <- predict(best_workflow, weather_merged_submission) %>%
   dplyr::pull(.pred)
 
 # replacing all NA values with predicted value
-merged_submission_final <- merged_submission %>%
+merged_submission_final <- weather_merged_submission %>%
   dplyr::mutate(
     yield_mg_ha = dplyr::if_else(
       is.na(yield_mg_ha),
@@ -891,7 +853,7 @@ merged_submission_final <- merged_submission %>%
   ) %>% 
   dplyr::select(year, site, hybrid, yield_mg_ha)
 
-write_csv(comparison_table,
+write_csv(merged_submission_final,
           here::here("teach_output", "csv", "merged_submission_final.csv"))
 ```
 
