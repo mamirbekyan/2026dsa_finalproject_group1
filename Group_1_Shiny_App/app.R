@@ -78,7 +78,7 @@ ui <- navbarPage(
     )
   ),
   
-  # ---------------- NEW: INTERACTIVE BOXPLOT ----------------
+  # ----------------INTERACTIVE BOXPLOT ----------------
   tabPanel(
     "Interactive Yield Boxplot",
     fluidPage(
@@ -165,7 +165,7 @@ server <- function(input, output, session) {
       theme_minimal()
   })
   
-  # ---------------- NEW: INTERACTIVE BOXPLOT ----------------
+  # ---------------- INTERACTIVE BOXPLOT ----------------
   output$yield_box_interactive <- renderPlot({
     
     var <- input$box_var
@@ -186,7 +186,7 @@ server <- function(input, output, session) {
       theme(axis.text.x = element_text(angle = 45, hjust = 1))
   })
   
-  # ---------------- MODEL PERFORMANCE (FIXED) ----------------
+  # ---------------- MODEL PERFORMANCE ----------------
   output$obs_pred <- renderPlot({
     
     data <- merged_submission_boxplot_main %>%
