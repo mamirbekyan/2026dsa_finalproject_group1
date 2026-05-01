@@ -90,7 +90,7 @@ training_trait1 <- training_trait %>%
 training_merged <- training_trait1 %>%
   left_join(training_soil1, by = c("site", "year")) %>%
   left_join(training_metadata1, by = c("site", "year"))%>%
-  select(-replicate, -block)
+  select(-replicate, -block, -previous_crop, -grain_moisture)
 
 library(USAboundaries)
 library(ggplot2)
@@ -124,16 +124,22 @@ setdiff(training_merged$site, testing_submission$site)  # sites in df2 but not d
 #Drop sites from training_merged that to not need to be predicted to complete testing_submission. ONH1 and 2 are in proximity to one another, however to not appear in the testing_submission dataframe. ONH3 (a new site) appears in testing_submission. Potential to predict ONH3 based on ONH1 and ONH2, so will not remove them.
 
 training_merged1 <- training_merged %>%
-  filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1" ))) %>%
+  filter(!(site %in% c("IAH1a" ,"IAH1b" ,"IAH1c", "IAH3" , "MOH2" , "NYH1" ,"TXH2" , "IAH1" , "KSH1" , "NEH4" , "SDH1" , "ARH1" , "ARH2",  "COH1" ,"GEH1",  "TXH3" , "TXH4" , "NYS1", "ONH1", "ONH2" ))) %>%
   mutate(id = row_number(), .before = "year") #adding an ID column at the front of the table to identify rows
 
 write_csv(training_merged1,
           here::here("data", "training", "training_merged1.csv"))
 
+testing_submission1 <- testing_submission %>%
+  filter(!(site %in% c("ONH3")))
+  
+write_csv(training_merged1,
+          here::here("data", "testing", "testing_submission1.csv"))
 #confirm: 
-setdiff(testing_submission$site, training_merged1$site)  # sites in df1 but not df2
-setdiff(training_merged1$site, testing_submission$site)  # sites in df2 but not df1
+setdiff(testing_submission1$site, training_merged1$site)  # sites in df1 but not df2
+setdiff(training_merged1$site, testing_submission1$site)  # sites in df2 but not df1
 
+#both have 0 differences in site now
 
 fieldweather <- read_csv(here("data", "fieldweatherdata.csv"))
 
@@ -152,7 +158,7 @@ fieldweatherdata %>%
   facet_wrap(~name, scales = "free")
 
 
-############### DENSITY PLOT FOR DISTRIBUTION OF YIELD
+## DENSITY PLOT FOR DISTRIBUTION OF YIELD
 
 yield_density_all_years <- fieldweatherdata %>%
   ggplot(aes(x = yield_mg_ha)) +
@@ -200,7 +206,8 @@ weather_features <- training_merged1 %>%
 weather_merged <- training_merged1 %>%
   filter(year != 2014) %>%
   left_join(weather_features,
-            by = c("site", "year", "date_planted", "date_harvested"))
+            by = c("site", "year", "date_planted", "date_harvested")) %>%
+  select(-id, replicate, block)
 
 
 write_csv(weather_merged,
@@ -662,40 +669,37 @@ testing_soil1 <- testing_soil %>%
   select(!(x)) %>%
   unique()
 
+
 merged_submission <- testing_submission %>%
   left_join(testing_soil1, by = c("site", "year")) %>%
-  left_join(testing_meta, by = c("site", "year")) 
+  left_join(testing_meta, by = c("site", "year")) %>%
+  select(-previous_crop)
 
 merged_submission_final <- merged_submission %>%
   left_join(
-    average_growing_window_testing_submission %>%
-      select(site, hybrid, date_planted, date_harvested),
-    by = c("site", "hybrid")
-  ) %>%
-  select(-longitude, -latitude, -previous_crop) %>%
+    average_growing_window_testing_submission) %>%
   mutate(
     date_planted   = as.Date(date_planted),
     date_harvested = as.Date(date_harvested)
   )
 
-fieldweatherdata_submission1 <- fieldweatherdata_submission %>%
+fieldweather_submission1 <- fieldweather_submission %>%
   # Selecting needed variables
-  dplyr::select(-tile, -altitude, -previous_crop, -longitude, -latitude) %>%
+  dplyr::select(-tile, -altitude) %>%
 # Creating a date class variable  
   mutate(date_chr = paste0(year, "/", yday)) %>%
   mutate(date = as.Date(date_chr, "%Y/%j"))
 
-
-
-
-weather_features_submission1 <- merged_submission_final %>%
-  select(site, year, day_of_year_planted, day_of_year_harvested) %>%
-  distinct() %>%
+merged_submission_final1 <- merged_submission_final %>%
   mutate(
-    date_planted   = ymd(paste0(year, "-01-01")) + days(day_of_year_planted - 1),
-    date_harvested = ymd(paste0(year, "-01-01")) + days(day_of_year_harvested - 1)
-  ) %>%
-  left_join(fieldweatherdata_submission1, by = c("site", "year")) %>%
+    date_planted = ymd(paste0(year, "-01-01")) + days(yday(date_planted) - 1),
+    date_harvested = ymd(paste0(year, "-01-01")) + days(yday(date_harvested) - 1)
+  )
+
+weather_features_submission1 <- merged_submission_final1 %>%
+  distinct(site, year, date_planted, date_harvested) %>%
+  
+  left_join(fieldweather_submission1, by = c("site", "year")) %>%
   filter(date >= date_planted,
          date <= date_harvested) %>%
   group_by(site, year, date_planted, date_harvested) %>%
@@ -704,13 +708,17 @@ weather_features_submission1 <- merged_submission_final %>%
     sum_gdd = sum(gdd_rounded, na.rm = TRUE),
     across(
       c(dayl_s, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa),
-      mean, na.rm = TRUE,
-      .names = "mean_{.col}"
+      mean, na.rm = TRUE
     ),
     sum_precip = sum(prcp_mm_day, na.rm = TRUE),
     .groups = "drop"
   )
 
+weather_merged_submission <- merged_submission_final1 %>%
+  left_join(
+    weather_features_submission1,
+    by = c("site", "year", "date_planted", "date_harvested")
+  )
 write_csv(weather_merged_submission,
           here::here("data", "weather_merged_submission.csv"))
 
@@ -750,4 +758,4 @@ merged_submission_final <- merged_submission %>%
 write_csv(comparison_table,
           here::here("teach_output", "csv", "merged_submission_final.csv"))
 
-#knitr::purl("project_code_teach.qmd", output = "project_code_teach1.R", documentation = 0)
+#knitr::purl("project_code_teach.qmd", output = "project_code_teach.R", documentation = 0)
