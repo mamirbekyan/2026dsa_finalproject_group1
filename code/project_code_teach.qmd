@@ -818,7 +818,7 @@ fieldweatherdata_submission1 <- fieldweatherdata_submission %>%
 
 
 weather_features_submission1 <- merged_submission_final %>%
-  select(site, year, day_of_year_planted, day_of_year_harvested) %>%  # 👈 use DOY instead
+  select(site, year, day_of_year_planted, day_of_year_harvested) %>%
   distinct() %>%
   mutate(
     date_planted   = ymd(paste0(year, "-01-01")) + days(day_of_year_planted - 1),
