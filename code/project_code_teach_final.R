@@ -1,27 +1,9 @@
----
-title: "Data Science Applied to Ag - Final Project - ML"
-format:
-  html:
-    embed-resources: true
-    toc: true
-    theme: cerulean
-author: Group 1 (Mari, Oluwatomide)
----
-
-```{r}
 # shared_lib_path <- "/work/crss8030/instructor_data/shared_R_libs"
 
 #class_packages <- c("tidymodels", "tidyverse", "vip", "ranger", "finetune", "parsnip", "reticulate", "xgboost", "doParallel", "lme4", "here")
 
 #install.packages(class_packages, lib = shared_lib_path)
-```
 
-# Locate the installed libraries (important step while running the script in cluster - sapelo2)
-
-
-#1. Loading Library
-##a. Libraries
-```{r, warning = False, message = False}
 #install.packages("lightgbm")
 # .libPaths(c("/work/crss8030/instructor_data/shared_R_libs", .libPaths()))
 
@@ -46,20 +28,13 @@ library(lme4)
 library(quarto)
 library(here)
 here::here()
-```
 
-##b. Creating Output Files in Teaching Cluster
-```{r}
 dir.create(here("teach_output"), showWarnings = FALSE)
 dir.create(here("teach_output", "png"), showWarnings = FALSE)
 dir.create(here("teach_output", "csv"), showWarnings = FALSE)
 dir.create(here("teach_output", "rds"), showWarnings = FALSE)
 
-```
 
-
-#2. Viewing Files
-```{r, warning = False, message = False}
 training_metadata <- read_csv(here("data", "training", "training_meta.csv"))
 
 training_soil <- read_csv(here("data", "training", "training_soil.csv"))
@@ -74,11 +49,7 @@ testing_soil <- read_csv(here("data", "testing", "testing_soil.csv"))
 
 fieldweather_submission <- read_csv(here("data", "fieldweatherdata_testing.csv"))
 
-```
 
-
-#3. Removing Duplicates and determining day of the year
-```{r, warning = False, message = False}
 
 training_soil1 <- training_soil %>%
   select(!(year)) %>%
@@ -115,18 +86,12 @@ training_trait1 <- training_trait %>%
 #view(training_soil1)
 #view(training_metadata1)
 #view(training_trait1)
-```
 
-#4. Creating Merged Dataset
-```{r, warning = False, message = False}
 training_merged <- training_trait1 %>%
   left_join(training_soil1, by = c("site", "year")) %>%
   left_join(training_metadata1, by = c("site", "year"))%>%
   select(-replicate, -block, -previous_crop, -grain_moisture)
-```
 
-#5. Mapping Sites
-```{r, warning = False, message = False}
 library(USAboundaries)
 library(ggplot2)
 library(dplyr)
@@ -149,11 +114,7 @@ ggsave(
   dpi = 150
 )
 #Making a map to identify the site distributions. PR, AK, HI were removed since they did not have sites. Points exist in the Mediterranean between Corsica and Italy, i.e. Site NEH2 (which exists in the final testing_submission file).
-```
 
-
-#6. Matching Sites Across Files
-```{r, warning = False, message = False}
 
 #Making Sites Only Identical Across Training and Testing
 
@@ -179,9 +140,7 @@ setdiff(testing_submission1$site, training_merged1$site)  # sites in df1 but not
 setdiff(training_merged1$site, testing_submission1$site)  # sites in df2 but not df1
 
 #both have 0 differences in site now
-```
 
-```{r, warning = False, message = False}
 fieldweather <- read_csv(here("data", "fieldweatherdata.csv"))
 
 fieldweatherdata <- fieldweather %>%
@@ -189,11 +148,7 @@ fieldweatherdata <- fieldweather %>%
 
 summary(fieldweatherdata)
 
-```
 
-
-#7. Density plots  
-```{r}
 #To explore the weather data distributions
 
 fieldweatherdata %>% 
@@ -202,9 +157,7 @@ fieldweatherdata %>%
   geom_density() + 
   facet_wrap(~name, scales = "free")
 
-```
 
-```{r}
 ## DENSITY PLOT FOR DISTRIBUTION OF YIELD
 
 yield_density_all_years <- fieldweatherdata %>%
@@ -222,10 +175,7 @@ ggsave(
   width = 9,
   dpi = 150
 )
-```
 
-
-```{r}
 fieldweather1 <- fieldweatherdata %>%
   # Selecting needed variables
   dplyr::select(-tile, -altitude) %>%
@@ -233,10 +183,7 @@ fieldweather1 <- fieldweatherdata %>%
   mutate(date_chr = paste0(year, "/", yday)) %>% #paste0 helps to merge columns together
   mutate(date = as.Date(date_chr, "%Y/%j"))
 
-```
 
-
-```{r, warning=FALSE}
 weather_features <- training_merged1 %>%
   select(site, year, date_planted, date_harvested) %>%
   distinct() %>%
@@ -265,10 +212,7 @@ weather_merged <- training_merged1 %>%
 
 write_csv(weather_merged,
           here::here("data", "weather_merged.csv"))
-```
 
-# 8. Data Visualization 
-```{r}
 #Plotting all variables by site
 
 allplots <- weather_merged %>%
@@ -295,11 +239,7 @@ ggsave(
   width = 9,
   dpi = 150
 ) 
-```
 
-
-#9. Pre-Processing Before MLA
-```{r}
 set.seed(76332)
 
 # Splitting the Data for Training
@@ -312,10 +252,7 @@ merged_train
 
 merged_test <- testing(merged_split)
 merged_test
-```
 
-#10. Distribution of Yield
-```{r, density plot}
 density_plot_train_to_test_set <- ggplot() +
   geom_density(data = merged_train, 
                aes(x = yield_mg_ha),
@@ -332,10 +269,7 @@ ggsave(
   width = 9,
   dpi = 150
 )
-```
 
-#11. Recipe and Prep for Training Model
-```{r}
 #RECIPE
 
 merged_recipe <- recipe(yield_mg_ha ~ ., data = merged_train) %>%
@@ -349,18 +283,12 @@ merged_recipe <- recipe(yield_mg_ha ~ ., data = merged_train) %>%
 merged_prep <- merged_recipe %>%
   prep()
 
-```
 
-```{r}
 # helps to see all the available hyperparameter we can tune for a model
 show_model_info("boost_tree")
 # helps to see all the models that we can run with the package parsnip
 get_from_env("models")
-```
 
-#12. XGBoost
-##a. Setting Up
-```{r, xgb_spec}
 ###setting up xgboost
 
 xgb_spec <- 
@@ -374,10 +302,7 @@ xgb_spec <-
   set_mode("regression")
 
 xgb_spec
-```
 
-##b. Cross Validation
-```{r}
 ### cross-validation
 set.seed(235)
 resampling_foldcv <- vfold_cv(merged_train, v = 4)
@@ -431,9 +356,7 @@ cl <- makePSOCKcluster(n_cores)
 registerDoParallel(cl)
 
 cat(paste0("\nFound and registered ", n_cores, " cores to work with\n"))
-```
 
-```{r}
 set.seed(76544)
 
 #Direct tune using the only resampling method defined above (vfold, resampling_foldcv)
@@ -466,10 +389,7 @@ final_spec_xgb <- boost_tree(
   set_mode("regression")
 
 final_spec_xgb
-```
 
-##c. Final Fit
-```{r, warning=FALSE}
 ###Validation
 set.seed(10)
 final_fit_xgb <- last_fit(final_spec_xgb,
@@ -480,11 +400,7 @@ final_fit_xgb %>%
 final_fit_xgb %>%
   collect_metrics() %>% #gives the rmse and r2 on the test set
   mutate(estimate = round(.estimate, 3))
-```
 
-#13. LightGBM
-##a. Setting Up
-```{r, lgbm_spec}
 ###setting up LightGBM
 
 lgbm_spec <- 
@@ -498,10 +414,7 @@ lgbm_spec <-
   set_mode("regression")
 
 lgbm_spec
-```
 
-##b. Cross Validation
-```{r}
 ### cross-validation
 set.seed(1235)
 resampling_foldcv_lgbm <- vfold_cv(merged_train, v = 4)
@@ -542,9 +455,7 @@ cl <- makePSOCKcluster(n_cores)
 registerDoParallel(cl)
 
 cat(paste0("\nFound and registered ", n_cores, " cores to work with\n"))
-```
 
-```{r}
 set.seed(76544)
 
 #Direct tune using the only resampling method defined above (vfold, resampling_foldcv)
@@ -577,10 +488,7 @@ final_spec_lgbm <- boost_tree(
   set_mode("regression")
 
 final_spec_lgbm
-```
 
-##c. Final Fit
-```{r, warning=FALSE}
 ###Validation
 set.seed(10)
 final_fit_lgbm <- last_fit(final_spec_lgbm,
@@ -591,12 +499,7 @@ final_fit_lgbm %>%
 final_fit_lgbm %>%
   collect_metrics() %>% #gives the rmse and r2 on the test set
   mutate(estimate = round(.estimate, 3))
-```
 
-
-#Final Specification
-
-```{r final_spec_fit}
 final_spec_lgbm <- boost_tree(
   trees = best_r2_lgbm$trees,           # Number of boosting rounds (trees)
   tree_depth = best_r2_lgbm$tree_depth, # Maximum depth of each tree
@@ -607,11 +510,7 @@ final_spec_lgbm <- boost_tree(
   set_mode("regression")
 
 final_spec_lgbm
-```
 
-#Validation
-
-```{r final_fit}
 set.seed(10)
 final_fit_lgbm <- last_fit(final_spec_lgbm,
                 merged_recipe,
@@ -619,19 +518,10 @@ final_fit_lgbm <- last_fit(final_spec_lgbm,
 
 final_fit_lgbm %>%
   collect_predictions()
-```
 
-#Evaluate on Test Set
-
-```{r final_fit_metrics}
 final_fit_lgbm %>%
   collect_metrics()
-```
 
-
-#14: Comparing Predicted vs Observed Plots
-
-```{r}
 Publication_ready_xgb <- final_fit_xgb %>%
   collect_predictions() %>%
   ggplot(aes(x = yield_mg_ha,
@@ -649,9 +539,7 @@ ggsave(
   width = 9,
   dpi = 150
 )
-```
 
-```{r}
 Publication_ready_lgbm <- final_fit_lgbm %>%
   collect_predictions() %>%
   ggplot(aes(x = yield_mg_ha,
@@ -669,11 +557,7 @@ ggsave(
   width = 9,
   dpi = 150
 )
-```
 
-
-#15: Comparing Variable Importances
-```{r}
 #XGBoost
 vip_xgb <- final_spec_xgb %>%
   fit(yield_mg_ha ~ .,
@@ -728,11 +612,7 @@ ggsave(
   dpi = 150
 )
 
-```
 
-
-#16. Comparison of RMSE and R2 Values
-```{r}
 #Make a table of the RMSE and R2 Values to compare directly
 
 metrics_xgb <- final_fit_xgb %>%
@@ -748,9 +628,7 @@ write_csv(metrics_xgb,
 write_csv(metrics_lgbm,
           here::here("teach_output", "csv", "lgbm_metrics.csv"))
 
-```
 
-```{r}
 metrics_xgb <- final_fit_xgb %>%
   collect_metrics() %>%
   dplyr::mutate(model = "xgboost")
@@ -770,11 +648,7 @@ comparison_table
 write_csv(comparison_table,
           here::here("teach_output", "csv", "model_comparison_metrics.csv"))
 
-```
 
-#17. Wrangling for testing prediction
-#a. For GDD: Getting Average Growing Season
-```{r}
 #creating an average for the growing window so that we can clculate GDD based on this range later. Created then renamed to the same column name as training_merged1 for consistency
 average_growing_window_testing_submission <- training_merged1 %>%
   group_by(year, site, hybrid) %>%
@@ -787,10 +661,7 @@ average_growing_window_testing_submission <- training_merged1 %>%
   select(-year)
 
 average_growing_window_testing_submission
-```
 
-
-```{r, warning=FALSE}
 #Wrangling testing soil to separate year from site in the site column before merging for prediction
 testing_soil1 <- testing_soil %>%
   separate(site, 
@@ -818,10 +689,7 @@ fieldweather_submission1 <- fieldweather_submission %>%
 # Creating a date class variable  
   mutate(date_chr = paste0(year, "/", yday)) %>%
   mutate(date = as.Date(date_chr, "%Y/%j"))
-```
 
-
-```{r, warning=FALSE}
 merged_submission_final1 <- merged_submission_final %>%
   mutate(
     date_planted = ymd(paste0(year, "-01-01")) + days(yday(date_planted) - 1),
@@ -853,11 +721,7 @@ weather_merged_submission <- merged_submission_final1 %>%
   )
 write_csv(weather_merged_submission,
           here::here("data", "weather_merged_submission.csv"))
-```
 
-
-##Predicting testing_submission
-```{r}
 #selecting model with best r2
 comparison <- all_metrics %>%
   dplyr::filter(.metric == "rmse")
@@ -893,9 +757,5 @@ merged_submission_final <- merged_submission %>%
 
 write_csv(merged_submission_final,
           here::here("teach_output", "csv", "merged_submission_final.csv"))
-```
 
-
-```{r}
-knitr::purl("project_code_teach.qmd", output = "project_code_teach_final.R", documentation = 0)
-```
+#knitr::purl("project_code_teach.qmd", output = "project_code_teach_final.R", documentation = 0)
