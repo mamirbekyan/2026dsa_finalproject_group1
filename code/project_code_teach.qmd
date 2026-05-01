@@ -631,50 +631,42 @@ ggsave(
 #15: Comparing Variable Importances
 ```{r}
 #XGBoost
-vip_xgb <- final_spec_xgb %>%
-  fit(yield_mg_ha ~ .,
-         data = bake(merged_prep, merged_train)) %>% 
-    vi() %>%
-  mutate(
-    Variable = fct_reorder(Variable, 
-                           Importance)
-  ) %>%
-  ggplot(aes(x = Importance, 
-             y = Variable)) +
-  geom_col() +
-  scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL) +
-  theme(panel.background  = element_rect(fill = "gray82"),
-        panel.grid = element_blank())
 
-cat(paste0("\nSaving...... publication ready plot for variable importance\n"))
+vip_xgb1 <- final_spec_xgb %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(merged_prep, merged_train)) %>% 
+  vi() %>%
+  slice_max(Importance, n = 20) %>% 
+  mutate(
+    Variable = fct_reorder(Variable, Importance)
+  ) %>%
+  ggplot(aes(x = Importance, y = Variable)) +
+  geom_col(fill = "steelblue") +
+  labs(y = NULL, title = "Top 20 Important Variables") +
+  theme_minimal()
 
 ggsave(
-  plot = vip_xgb,
+  plot = vip_xgb1,
   filename = here ("teach_output", "png", "vip_xgb.png"),
   height = 6,
   width = 9,
   dpi = 150
 )
 
+
 #LightGBM
 vip_lgbm <- final_spec_lgbm %>%
-  fit(yield_mg_ha ~ .,
-         data = bake(merged_prep, merged_train)) %>% 
-    vi() %>%
+fit(yield_mg_ha ~ .,
+      data = bake(merged_prep, merged_train)) %>% 
+  vi() %>%
+  slice_max(Importance, n = 20) %>% 
   mutate(
-    Variable = fct_reorder(Variable, 
-                           Importance)
+    Variable = fct_reorder(Variable, Importance)
   ) %>%
-  ggplot(aes(x = Importance, 
-             y = Variable)) +
-  geom_col() +
-  scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL) +
-  theme(panel.background  = element_rect(fill = "gray82"),
-        panel.grid = element_blank())
-
-cat(paste0("\nSaving...... publication ready plot for variable importance\n"))
+  ggplot(aes(x = Importance, y = Variable)) +
+  geom_col(fill = "steelblue") +
+  labs(y = NULL, title = "Top 20 Important Variables") +
+  theme_minimal()
 
 ggsave(
   plot = vip_lgbm,
@@ -683,7 +675,6 @@ ggsave(
   width = 9,
   dpi = 150
 )
-
 ```
 
 
@@ -856,6 +847,61 @@ merged_submission_final <- weather_merged_submission %>%
 write_csv(merged_submission_final,
           here::here("teach_output", "csv", "merged_submission_final.csv"))
 ```
+
+
+#boxplot for all variables
+```{r}
+merged_submission_boxplot_main <- merged_submission_boxplot %>%
+  mutate(
+    yield_mg_ha = if_else(
+      is.na(yield_mg_ha),
+      pred_yield,
+      yield_mg_ha
+    ),
+    yield_group = ntile(yield_mg_ha, 4)
+  )
+
+vars_to_plot <- c(
+  "n_days",
+  "sum_gdd",
+  "sum_precip",
+  "mean_dayl_s",
+  "mean_srad_w_m_2",
+  "mean_tmax_deg_c",
+  "mean_tmin_deg_c",
+  "mean_vp_pa"
+)
+
+
+boxplot_data <- merged_submission_boxplot_main %>%
+  select(all_of(vars_to_plot), yield_group) %>%
+  mutate(yield_group = factor(yield_group)) %>%
+  
+  pivot_longer(
+    cols = all_of(vars_to_plot),
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  
+  filter(!is.na(value), !is.na(yield_group))
+
+mainplot <- ggplot(boxplot_data, aes(x = yield_group, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free") +
+  theme_minimal()
+
+mainplot
+
+ggsave(
+  plot = mainplot,
+  filename = here ("teach_output", "png", "predictors_by_yield_boxplot.png"),
+  height = 6,
+  width = 9,
+  dpi = 150
+)
+
+```
+
 
 
 ```{r}
