@@ -40,8 +40,6 @@ ui <- navbarPage(
   tabPanel(
     "EDA",
     fluidPage(
-      titlePanel("Exploratory Data Analysis"),
-      
       fluidRow(
         column(6, plotOutput("yield_hist")),
         column(6, plotOutput("yield_site"))
@@ -49,17 +47,14 @@ ui <- navbarPage(
     )
   ),
   
-  # ---------------- PREDICTOR ----------------
+  # ---------------- PREDICTOR VS YIELD ----------------
   tabPanel(
     "Predictor vs Yield",
     fluidPage(
-      titlePanel("Weather & Soil Effects"),
-      
       sidebarLayout(
         sidebarPanel(
           selectInput("var", "Select predictor:", choices = vars_to_plot)
         ),
-        
         mainPanel(
           plotOutput("predictor_plot")
         )
@@ -67,20 +62,36 @@ ui <- navbarPage(
     )
   ),
   
-  # ---------------- INTERACTIVE ----------------
+  # ---------------- INTERACTIVE SCATTER ----------------
   tabPanel(
     "Interactive Exploration",
     fluidPage(
-      titlePanel("Custom Variable Exploration"),
-      
       sidebarLayout(
         sidebarPanel(
           selectInput("xvar", "X-axis:", choices = vars_to_plot),
           selectInput("yvar", "Y-axis:", choices = c("yield_mg_ha", vars_to_plot))
         ),
-        
         mainPanel(
           plotOutput("xy_plot")
+        )
+      )
+    )
+  ),
+  
+  # ---------------- NEW: INTERACTIVE BOXPLOT ----------------
+  tabPanel(
+    "Interactive Yield Boxplot",
+    fluidPage(
+      sidebarLayout(
+        sidebarPanel(
+          selectInput(
+            "box_var",
+            "Group yield by:",
+            choices = c("site", "year", "hybrid", vars_to_plot)
+          )
+        ),
+        mainPanel(
+          plotOutput("yield_box_interactive")
         )
       )
     )
@@ -90,8 +101,6 @@ ui <- navbarPage(
   tabPanel(
     "Model Performance",
     fluidPage(
-      titlePanel("Observed vs Predicted"),
-      
       fluidRow(
         column(6, plotOutput("obs_pred")),
         column(6, textOutput("metrics"))
@@ -103,8 +112,6 @@ ui <- navbarPage(
   tabPanel(
     "Model Interpretation",
     fluidPage(
-      titlePanel("Variable Importance"),
-      
       selectInput(
         "vip_plot",
         "Select Model:",
@@ -113,12 +120,7 @@ ui <- navbarPage(
           "XGB"  = "vip_xgb.png"
         )
       ),
-      
-      tags$img(
-        src = NULL,
-        id = "vip_img",
-        style = "width:100%; max-width:900px;"
-      )
+      imageOutput("vip_image")
     )
   )
 )
@@ -146,7 +148,6 @@ server <- function(input, output, session) {
   
   # ---------------- PREDICTOR ----------------
   output$predictor_plot <- renderPlot({
-    
     ggplot(merged_submission_boxplot_main,
            aes(x = .data[[input$var]], y = yield_mg_ha)) +
       geom_point(alpha = 0.4) +
@@ -154,9 +155,8 @@ server <- function(input, output, session) {
       theme_minimal()
   })
   
-  # ---------------- INTERACTIVE ----------------
+  # ---------------- INTERACTIVE SCATTER ----------------
   output$xy_plot <- renderPlot({
-    
     ggplot(merged_submission_boxplot_main,
            aes(x = .data[[input$xvar]],
                y = .data[[input$yvar]])) +
@@ -165,13 +165,38 @@ server <- function(input, output, session) {
       theme_minimal()
   })
   
+  # ---------------- NEW: INTERACTIVE BOXPLOT ----------------
+  output$yield_box_interactive <- renderPlot({
+    
+    var <- input$box_var
+    
+    plot_data <- merged_submission_boxplot_main %>%
+      filter(!is.na(yield_mg_ha)) %>%
+      mutate(group_var = .data[[var]])
+    
+    ggplot(plot_data,
+           aes(x = factor(group_var), y = yield_mg_ha)) +
+      geom_boxplot() +
+      geom_jitter(width = 0.2, alpha = 0.3) +
+      theme_minimal() +
+      labs(
+        x = var,
+        y = "Yield (mg/ha)"
+      ) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+  
   # ---------------- MODEL PERFORMANCE (FIXED) ----------------
   output$obs_pred <- renderPlot({
     
     data <- merged_submission_boxplot_main %>%
-      filter(!is.na(yield_mg_ha), !is.na(pred_yield))
+      transmute(
+        yield_mg_ha = as.numeric(yield_mg_ha),
+        pred_yield  = as.numeric(pred_yield)
+      ) %>%
+      filter(is.finite(yield_mg_ha), is.finite(pred_yield))
     
-    validate(need(nrow(data) > 1, "No valid data available"))
+    validate(need(nrow(data) > 1, "No valid data for model performance"))
     
     ggplot(data,
            aes(x = yield_mg_ha, y = pred_yield)) +
@@ -180,20 +205,35 @@ server <- function(input, output, session) {
       theme_minimal()
   })
   
-  # ---------------- METRICS ----------------
   output$metrics <- renderText({
     
     data <- merged_submission_boxplot_main %>%
-      filter(!is.na(yield_mg_ha), !is.na(pred_yield))
+      transmute(
+        yield_mg_ha = as.numeric(yield_mg_ha),
+        pred_yield  = as.numeric(pred_yield)
+      ) %>%
+      filter(is.finite(yield_mg_ha), is.finite(pred_yield))
     
-    validate(need(nrow(data) > 1, "Not enough data"))
+    validate(need(nrow(data) > 2, "Not enough data"))
     
     r2 <- cor(data$yield_mg_ha, data$pred_yield)^2
     rmse <- sqrt(mean((data$yield_mg_ha - data$pred_yield)^2))
     
-    paste0("R² = ", round(r2, 3),
-           " | RMSE = ", round(rmse, 2))
+    paste0(
+      "R² = ", round(r2, 3),
+      " | RMSE = ", round(rmse, 2)
+    )
   })
+  
+  # ---------------- VIP IMAGE ----------------
+  output$vip_image <- renderImage({
+    list(
+      src = file.path("www", input$vip_plot),
+      contentType = "image/png",
+      alt = "Variable Importance",
+      width = "100%"
+    )
+  }, deleteFile = FALSE)
 }
 
 # ------------------------------------------------
