@@ -373,7 +373,7 @@ xgb_spec
 ```{r}
 ### cross-validation
 set.seed(235)
-resampling_foldcv <- vfold_cv(merged_train, v = 5)
+resampling_foldcv <- vfold_cv(merged_train, v = 4)
 
 ### These are removed below because the computational speed is heavily compromised. However, it would improve accuracy if left in. 
 
@@ -393,7 +393,7 @@ xgb_grid <- grid_latin_hypercube(
   min_n(),
   learn_rate(),
   trees(),
-  size = 25
+  size = 20
 )
 xgb_grid
 
@@ -496,7 +496,7 @@ lgbm_spec
 ```{r}
 ### cross-validation
 set.seed(1235)
-resampling_foldcv_lgbm <- vfold_cv(merged_train, v = 5)
+resampling_foldcv_lgbm <- vfold_cv(merged_train, v = 4)
 
 ###Sampling using Latin-Hypercube
 set.seed(123456)
@@ -505,7 +505,7 @@ lgbm_latin_hyper_plot <- grid_latin_hypercube(
   min_n(),
   learn_rate(),
   trees(),
-  size = 25
+  size = 20
 )
 
 
@@ -793,7 +793,6 @@ merged_submission <- testing_submission %>%
   left_join(testing_soil1, by = c("site", "year")) %>%
   left_join(testing_meta, by = c("site", "year")) 
 
-
 merged_submission_final <- merged_submission %>%
   left_join(
     average_growing_window_testing_submission %>%
@@ -805,7 +804,6 @@ merged_submission_final <- merged_submission %>%
     date_planted   = as.Date(date_planted),
     date_harvested = as.Date(date_harvested)
   )
-
 
 fieldweatherdata_submission1 <- fieldweatherdata_submission %>%
   # Selecting needed variables
@@ -886,5 +884,5 @@ write_csv(comparison_table,
 
 
 ```{r}
-#knitr::purl("project_code_teach.qmd", output = "project_code_teach1.R", documentation = 0)
+#knitr::purl("project_code_teach.qmd", output = "project_code_teach.R", documentation = 0)
 ```
