@@ -305,7 +305,7 @@ xgb_spec
 
 ### cross-validation
 set.seed(235)
-resampling_foldcv <- vfold_cv(merged_train, v = 4)
+resampling_foldcv <- vfold_cv(merged_train, v = 5)
 
 ### These are removed below because the computational speed is heavily compromised. However, it would improve accuracy if left in. 
 
@@ -325,7 +325,7 @@ xgb_grid <- grid_latin_hypercube(
   min_n(),
   learn_rate(),
   trees(),
-  size = 20
+  size = 5
 )
 xgb_grid
 
@@ -417,7 +417,7 @@ lgbm_spec
 
 ### cross-validation
 set.seed(1235)
-resampling_foldcv_lgbm <- vfold_cv(merged_train, v = 4)
+resampling_foldcv_lgbm <- vfold_cv(merged_train, v = 5)
 
 ###Sampling using Latin-Hypercube
 set.seed(123456)
@@ -426,7 +426,7 @@ lgbm_latin_hyper_plot <- grid_latin_hypercube(
   min_n(),
   learn_rate(),
   trees(),
-  size = 20
+  size = 5
 )
 
 
