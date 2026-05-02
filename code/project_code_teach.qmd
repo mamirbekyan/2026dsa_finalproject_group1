@@ -849,15 +849,10 @@ write_csv(merged_submission_final,
 ```
 
 
-#boxplot for all variables
 ```{r}
 merged_submission_boxplot_main <- merged_submission_boxplot %>%
   mutate(
-    yield_mg_ha = if_else(
-      is.na(yield_mg_ha),
-      pred_yield,
-      yield_mg_ha
-    ),
+    yield_mg_ha = if_else(is.na(yield_mg_ha), pred_yield, yield_mg_ha),
     yield_group = ntile(yield_mg_ha, 4)
   )
 
@@ -872,6 +867,93 @@ vars_to_plot <- c(
   "mean_vp_pa"
 )
 
+# Output folder
+dir.create("boxplots", showWarnings = FALSE)
+
+# Loop + save plots
+walk(vars_to_plot, function(var) {
+  
+  p <- ggplot(merged_submission_boxplot_main,
+              aes(x = factor(yield_group),
+                  y = .data[[var]])) +
+    geom_boxplot(fill = "steelblue") +
+    labs(
+      x = "Yield Group (Quartiles)",
+      y = var,
+      title = paste("Boxplot of", var, "by Yield Group")
+    ) +
+    theme_minimal()
+  
+  ggsave(
+    filename = paste0("boxplots/boxplot_", var, ".png"),
+    plot = p,
+    width = 6,
+    height = 4,
+    dpi = 300
+  )
+})
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(purrr)
+
+merged_submission_boxplot_main <- merged_submission_boxplot %>%
+  mutate(
+    yield_mg_ha = if_else(is.na(yield_mg_ha), pred_yield, yield_mg_ha)
+  )
+
+vars_to_plot <- c(
+  "n_days",
+  "sum_gdd",
+  "sum_precip",
+  "mean_dayl_s",
+  "mean_srad_w_m_2",
+  "mean_tmax_deg_c",
+  "mean_tmin_deg_c",
+  "mean_vp_pa"
+)
+
+dir.create("plots_raw_yield", showWarnings = FALSE)
+
+walk(vars_to_plot, function(var) {
+  
+  p <- ggplot(merged_submission_boxplot_main,
+              aes(x = yield_mg_ha, y = .data[[var]])) +
+    geom_point(alpha = 0.4) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    labs(
+      x = "Yield (mg/ha)",
+      y = var,
+      title = paste(var, "vs Yield (Raw)")
+    ) +
+    theme_minimal()
+  
+  ggsave(
+    filename = paste0("plots_raw_yield/", var, "_vs_yield.png"),
+    plot = p,
+    width = 6,
+    height = 4,
+    dpi = 300
+  )
+})
+```
+
+
+
+#boxplot for all variables
+```{r}
+merged_submission_boxplot_main <- merged_submission_boxplot %>%
+  mutate(
+    yield_mg_ha = if_else(
+      is.na(yield_mg_ha),
+      pred_yield,
+      yield_mg_ha
+    ),
+    yield_group = ntile(yield_mg_ha, 4) #splitting yield into 4 quantiles
+  )
 
 boxplot_data <- merged_submission_boxplot_main %>%
   select(all_of(vars_to_plot), yield_group) %>%
@@ -903,7 +985,49 @@ ggsave(
 ```
 
 
+```{r}
+#boxplot for selected soil and weather variables
+
+df <- merged_submission_boxplot
+
+dir.create("www/eda", recursive = TRUE, showWarnings = FALSE)
+
+soil_vars <- c("soilpH", "soilk_ppm")
+weather_vars <- c("sum_gdd", "sum_precip")
+
+
+save_plot <- function(var, title_name) {
+  
+  p <- ggplot(df, aes(x = .data[[var]], y = yield_mg_ha)) +
+    geom_point(alpha = 0.3) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    theme_minimal() +
+    labs(
+      title = paste("Yield vs", title_name),
+      x = var,
+      y = "Yield"
+    )
+  
+  ggsave(
+    filename = paste0("www/eda/", var, ".png"),
+    plot = p,
+    width = 6,
+    height = 4,
+    dpi = 300
+  )
+}
+
+
+save_plot("soilpH", "Soil pH")
+save_plot("soilk_ppm", "Soil Potassium (ppm)")
+
+save_plot("sum_gdd", "Growing Degree Days")
+save_plot("sum_precip", "Total Precipitation")
+```
+
+
+
 
 ```{r}
-knitr::purl("project_code_teach.qmd", output = "project_code_teach_final.R", documentation = 0)
+#knitr::purl("project_code_teach.qmd", output = "project_code_teach_final.R", documentation = 0)
 ```
